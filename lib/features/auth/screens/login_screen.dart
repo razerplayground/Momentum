@@ -1,24 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../data/providers/auth_provider.dart';
+import '../../../data/providers/workspace_provider.dart';
 import '../../../shared/widgets/common_widgets.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscureText = true;
-  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -29,15 +31,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String? _validateEmail(String? value) {
     final trimmedValue = (value ?? '').trim();
-
     if (trimmedValue.isEmpty) {
       return 'Email is required.';
     }
-
     if (!AuthService.isValidEmail(trimmedValue)) {
       return 'Please enter a valid email address.';
     }
-
     return null;
   }
 
@@ -45,50 +44,46 @@ class _LoginScreenState extends State<LoginScreen> {
     if ((value ?? '').trim().isEmpty) {
       return 'Password is required.';
     }
-
     return null;
   }
 
   Future<void> _login() async {
-    if (_isSubmitting) {
-      return;
-    }
-
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    setState(() => _isSubmitting = true);
+    final email = _emailCtrl.text.trim();
+    final pass = _passCtrl.text.trim();
 
-    final success = await AuthService.login(
-      email: _emailCtrl.text,
-      password: _passCtrl.text,
-    );
+    final success = await ref.read(authProvider.notifier).login(
+          email: email,
+          password: pass,
+        );
 
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
 
-    if (!success) {
-      setState(() => _isSubmitting = false);
+    if (success) {
+      // Sync local AuthService session email
+      await AuthService.setSessionEmail(email);
+      await ref.read(workspacesProvider.notifier).loadWorkspaces();
+      if (mounted) {
+        context.go('/workspaces');
+      }
+    } else {
+      final error = ref.read(authProvider).errorMessage ?? 'Invalid email or password.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid email or password. Please try again.'),
-          behavior: SnackBarBehavior.floating,
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.error,
         ),
       );
-      return;
-    }
-
-    setState(() => _isSubmitting = false);
-
-    if (mounted) {
-      context.go(AuthService.hasSavedWorkspace() ? '/home' : '/workspaces');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -99,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 60),
+                const SizedBox(height: 50),
                 Container(
                   width: 64,
                   height: 64,
@@ -108,11 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Center(
-                    child: Icon(
-                      Icons.rocket_launch_rounded,
-                      color: Colors.white,
-                      size: 32,
-                    ),
+                    child: Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 32),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -120,24 +111,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Sign in to continue to BizPro.',
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+                  style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 40),
+
                 Text('Email', style: AppTextStyles.labelLarge),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailCtrl,
                   keyboardType: TextInputType.emailAddress,
                   validator: _validateEmail,
+                  enabled: !authState.isLoading,
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
-                    prefixIcon: const Icon(
-                      Icons.email_outlined,
-                      color: AppColors.primary,
-                    ),
+                    prefixIcon: const Icon(Icons.email_outlined, color: AppColors.primary),
                     filled: true,
                     fillColor: AppColors.surfaceVariant,
                     border: OutlineInputBorder(
@@ -147,26 +135,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
+
                 Text('Password', style: AppTextStyles.labelLarge),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passCtrl,
                   obscureText: _obscureText,
                   validator: _validatePassword,
+                  enabled: !authState.isLoading,
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
-                    prefixIcon: const Icon(
-                      Icons.lock_outline_rounded,
-                      color: AppColors.primary,
-                    ),
+                    prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.primary),
                     suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureText ? Icons.visibility_off : Icons.visibility,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscureText = !_obscureText),
+                      icon: Icon(_obscureText ? Icons.visibility_off : Icons.visibility,
+                          color: AppColors.textSecondary),
+                      onPressed: () => setState(() => _obscureText = !_obscureText),
                     ),
                     filled: true,
                     fillColor: AppColors.surfaceVariant,
@@ -177,40 +161,36 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {},
-                    child: Text(
-                      'Forgot Password?',
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.primary,
-                      ),
-                    ),
+                    onPressed: authState.isLoading ? null : () {},
+                    child: Text('Forgot Password?',
+                        style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
                   ),
                 ),
                 const SizedBox(height: 32),
-                AbsorbPointer(
-                  absorbing: _isSubmitting,
-                  child: GradientButton(
-                    label: _isSubmitting ? 'Logging In...' : 'Login',
-                    onTap: _isSubmitting ? () {} : _login,
+
+                if (authState.isLoading)
+                  const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
+                else
+                  GradientButton(
+                    label: 'Login',
+                    onTap: _login,
                   ),
-                ),
                 const SizedBox(height: 24),
+
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text("Don't have an account?",
-                        style: AppTextStyles.bodyMedium),
+                    Text("Don't have an account?", style: AppTextStyles.bodyMedium),
                     TextButton(
-                      onPressed: () => context.go('/signup'),
-                      child: Text(
-                        'Sign Up',
-                        style: AppTextStyles.labelLarge.copyWith(
-                          color: AppColors.primary,
-                        ),
-                      ),
+                      onPressed: authState.isLoading ? null : () => context.go('/signup'),
+                      child: Text('Sign Up',
+                          style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
                     ),
                   ],
                 ),

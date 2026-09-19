@@ -180,6 +180,14 @@ class AuthService {
     return (_settingsBox.get(_sessionEmailKey) ?? '').toString();
   }
 
+  static Future<void> setSessionEmail(String email, {String? name}) async {
+    final normalized = email.trim().toLowerCase();
+    await _settingsBox.put(_sessionEmailKey, normalized);
+    if (name != null && name.isNotEmpty) {
+      await _settingsBox.put(_sessionNameKey, name);
+    }
+  }
+
   static String getSessionName() {
     return (_settingsBox.get(_sessionNameKey) ?? '').toString();
   }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../auth/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/models/workspace_model.dart';
+import '../../../data/providers/auth_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
 import '../../../shared/widgets/common_widgets.dart';
 
@@ -29,6 +31,11 @@ class _WorkspaceSelectionScreenState
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..forward();
+
+    // Trigger workspaces load from API
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(workspacesProvider.notifier).loadWorkspaces();
+    });
   }
 
   @override
@@ -41,6 +48,7 @@ class _WorkspaceSelectionScreenState
   Widget build(BuildContext context) {
     final workspaces = ref.watch(workspacesProvider);
     final isGlobalView = ref.watch(globalViewEnabledProvider);
+    final authState = ref.watch(authProvider);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -59,7 +67,7 @@ class _WorkspaceSelectionScreenState
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppColors.primary.withAlpha((0.15 * 255).round()),
+                    AppColors.primary.withOpacity(0.15),
                     Colors.transparent,
                   ],
                 ),
@@ -76,7 +84,7 @@ class _WorkspaceSelectionScreenState
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    AppColors.accentPink.withAlpha((0.12 * 255).round()),
+                    AppColors.accentPink.withOpacity(0.12),
                     Colors.transparent,
                   ],
                 ),
@@ -91,45 +99,58 @@ class _WorkspaceSelectionScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 32),
-                    GestureDetector(
-                      onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: const BoxDecoration(
-                              gradient: AppColors.purpleGradient,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.business_center_rounded,
-                                color: Colors.white, size: 24),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        GestureDetector(
+                          onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 48,
+                                height: 48,
+                                decoration: const BoxDecoration(
+                                  gradient: AppColors.purpleGradient,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.business_center_rounded,
+                                    color: Colors.white, size: 24),
+                              ),
+                              const SizedBox(width: 12),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('BizPro Manager',
+                                      style: AppTextStyles.titleLarge.copyWith(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w800)),
+                                  Text(
+                                    authState.user != null
+                                        ? 'Logged in as ${authState.user!.name}'
+                                        : (AuthService.getSessionEmail().isNotEmpty
+                                            ? AuthService.getSessionEmail()
+                                            : 'Your businesses, all in one place'),
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('BizPro Manager',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTextStyles.titleLarge.copyWith(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w800)),
-                                Text('Your businesses, all in one place',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTextStyles.bodySmall),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        IconButton(
+                          tooltip: 'Account Menu',
+                          icon: const Icon(Icons.account_circle_outlined,
+                              color: AppColors.primary, size: 28),
+                          onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 32),
                     Text('My Workspaces', style: AppTextStyles.displaySmall),
                     Text('Select a business to manage',
                         style: AppTextStyles.bodyMedium),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
                     if (workspaces.isNotEmpty) ...[
                       _GlobalViewCard(
                         isSelected: isGlobalView,
@@ -143,40 +164,52 @@ class _WorkspaceSelectionScreenState
                       const SizedBox(height: 16),
                     ],
                     Expanded(
-                      child: workspaces.isEmpty
-                          ? EmptyState(
-                              icon: Icons.business_center_outlined,
-                              title: 'No Workspaces Yet',
-                              subtitle:
-                                  'Create your first business workspace to get started.',
-                              actionLabel: 'Create Workspace',
-                              onAction: () => _showAddWorkspaceSheet(context),
-                            )
-                          : GridView.builder(
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 14,
-                                mainAxisSpacing: 14,
-                                childAspectRatio: 1.1,
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          await ref.read(workspacesProvider.notifier).loadWorkspaces();
+                        },
+                        child: workspaces.isEmpty
+                            ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  const SizedBox(height: 60),
+                                  EmptyState(
+                                    icon: Icons.business_center_outlined,
+                                    title: 'No Workspaces Yet',
+                                    subtitle:
+                                        'Create your first business workspace to get started.',
+                                    actionLabel: 'Create Workspace',
+                                    onAction: () => _showAddWorkspaceSheet(context),
+                                  ),
+                                ],
+                              )
+                            : GridView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 14,
+                                  mainAxisSpacing: 14,
+                                  childAspectRatio: 1.1,
+                                ),
+                                itemCount: workspaces.length,
+                                itemBuilder: (context, i) {
+                                  return _WorkspaceCard(
+                                    workspace: workspaces[i],
+                                    onTap: () {
+                                      ref
+                                          .read(workspacesProvider.notifier)
+                                          .setActiveWorkspace(workspaces[i].id);
+                                      context.go('/home');
+                                    },
+                                    onEdit: () => _showEditWorkspaceSheet(
+                                        context, workspaces[i]),
+                                    onDelete: () =>
+                                        _deleteWorkspace(context, workspaces[i]),
+                                  );
+                                },
                               ),
-                              itemCount: workspaces.length,
-                              itemBuilder: (context, i) {
-                                return _WorkspaceCard(
-                                  workspace: workspaces[i],
-                                  onTap: () {
-                                    ref
-                                        .read(workspacesProvider.notifier)
-                                        .setActiveWorkspace(workspaces[i].id);
-                                    context.go('/home');
-                                  },
-                                  onEdit: () => _showEditWorkspaceSheet(
-                                      context, workspaces[i]),
-                                  onDelete: () =>
-                                      _deleteWorkspace(context, workspaces[i]),
-                                );
-                              },
-                            ),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     GradientButton(
@@ -197,58 +230,89 @@ class _WorkspaceSelectionScreenState
   }
 
   Widget _buildAccountDrawer(BuildContext context) {
+    final email = AuthService.getSessionEmail();
+    final authUser = ref.watch(authProvider).user;
+
     return Drawer(
+      backgroundColor: AppColors.surface,
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              IconButton(
-                tooltip: 'Close menu',
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Account', style: AppTextStyles.headlineSmall),
+                  IconButton(
+                    tooltip: 'Close menu',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              Text('BizPro Manager', style: AppTextStyles.headlineSmall),
-              const SizedBox(height: 8),
-              Text(
-                AuthService.getSessionEmail(),
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: AppColors.primary,
+                      child: Text(
+                        (authUser?.name ?? email).isNotEmpty
+                            ? (authUser?.name ?? email)[0].toUpperCase()
+                            : 'U',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            authUser?.name ?? 'BizPro User',
+                            style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            authUser?.email ?? email,
+                            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const Spacer(),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.swap_horiz_rounded),
-                  label: const Text('Change workspace'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
                   onPressed: () async {
-                    await AuthService.logout();
-                    if (!context.mounted) {
-                      return;
-                    }
                     Navigator.pop(context);
+                    await ref.read(authProvider.notifier).logout();
+                    await AuthService.logout();
+                    if (!context.mounted) return;
                     context.go('/login');
                   },
                   icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Log out'),
+                  label: const Text('Log Out'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.accentRed,
                     side: BorderSide(
-                      color: AppColors.accentRed.withValues(alpha: 0.35),
+                      color: AppColors.accentRed.withOpacity(0.35),
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -265,6 +329,10 @@ class _WorkspaceSelectionScreenState
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => const _AddWorkspaceSheet(),
     );
   }
@@ -273,6 +341,10 @@ class _WorkspaceSelectionScreenState
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => _EditWorkspaceSheet(workspace: workspace),
     );
   }
@@ -335,19 +407,9 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
   late String _selectedEmoji;
   late int _selectedColorIndex;
   late String _selectedIndustry;
+  bool _isSaving = false;
 
-  final List<String> _emojis = [
-    '🏢',
-    '🏗️',
-    '🛒',
-    '💻',
-    '🏥',
-    '🍕',
-    '🎓',
-    '✈️',
-    '🏦',
-    '🎨'
-  ];
+  final List<String> _emojis = ['🏢', '🏗️', '🛒', '💻', '🏥', '🍕', '🎓', '✈️', '🏦', '🎨'];
   final List<String> _industries = [
     'General',
     'Construction',
@@ -368,7 +430,7 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
     _selectedEmoji = widget.workspace.emoji;
     _selectedIndustry = widget.workspace.industry;
     _selectedColorIndex = AppColors.workspaceColors.indexWhere(
-      (color) => color.toARGB32() == widget.workspace.colorValue,
+      (color) => color.value == widget.workspace.colorValue,
     );
     if (_selectedColorIndex == -1) {
       _selectedColorIndex = 0;
@@ -425,7 +487,7 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
                       height: 48,
                       decoration: BoxDecoration(
                         color: _selectedEmoji == _emojis[i]
-                            ? AppColors.primary.withAlpha((0.12 * 255).round())
+                            ? AppColors.primary.withOpacity(0.12)
                             : AppColors.surfaceVariant,
                         border: _selectedEmoji == _emojis[i]
                             ? Border.all(color: AppColors.primary, width: 2)
@@ -470,6 +532,7 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
               const SizedBox(height: 16),
               TextField(
                 controller: _nameController,
+                enabled: !_isSaving,
                 decoration: const InputDecoration(
                   hintText: 'Business Name (e.g., My Construction Co.)',
                   prefixIcon:
@@ -478,7 +541,7 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: _selectedIndustry,
+                value: _selectedIndustry,
                 decoration: const InputDecoration(
                   hintText: 'Industry',
                   prefixIcon:
@@ -488,38 +551,47 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
                     .map(
                         (ind) => DropdownMenuItem(value: ind, child: Text(ind)))
                     .toList(),
-                onChanged: (val) =>
-                    setState(() => _selectedIndustry = val ?? 'General'),
+                onChanged: _isSaving
+                    ? null
+                    : (val) => setState(() => _selectedIndustry = val ?? 'General'),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _descController,
                 maxLines: 2,
+                enabled: !_isSaving,
                 decoration: const InputDecoration(
-                  hintText: 'Description (optional)',
+                  hintText: 'Description or Address (optional)',
                   prefixIcon:
                       Icon(Icons.notes_rounded, color: AppColors.primary),
                 ),
               ),
               const SizedBox(height: 24),
-              GradientButton(
-                label: 'Save Changes',
-                onTap: () {
-                  if (_nameController.text.trim().isEmpty) return;
-                  final updated = widget.workspace.copyWith(
-                    name: _nameController.text.trim(),
-                    description: _descController.text.trim(),
-                    emoji: _selectedEmoji,
-                    colorValue: AppColors.workspaceColors[_selectedColorIndex]
-                        .toARGB32(),
-                    industry: _selectedIndustry,
-                  );
-                  ref
-                      .read(workspacesProvider.notifier)
-                      .updateWorkspace(updated);
-                  Navigator.pop(context);
-                },
-              ),
+              if (_isSaving)
+                const Center(child: CircularProgressIndicator(color: AppColors.primary))
+              else
+                GradientButton(
+                  label: 'Save Changes',
+                  onTap: () async {
+                    final name = _nameController.text.trim();
+                    if (name.isEmpty) return;
+
+                    setState(() => _isSaving = true);
+
+                    final updated = widget.workspace.copyWith(
+                      name: name,
+                      description: _descController.text.trim(),
+                      emoji: _selectedEmoji,
+                      colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
+                      industry: _selectedIndustry,
+                    );
+
+                    await ref.read(workspacesProvider.notifier).updateWorkspace(updated);
+
+                    if (!context.mounted) return;
+                    Navigator.of(context).pop();
+                  },
+                ),
               const SizedBox(height: 8),
             ],
           ),
@@ -545,7 +617,7 @@ class _GlobalViewCard extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: isSelected
               ? AppColors.primaryGradient
-              : LinearGradient(
+              : const LinearGradient(
                   colors: [AppColors.surface, AppColors.surfaceVariant],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -563,8 +635,8 @@ class _GlobalViewCard extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Colors.white.withAlpha((0.18 * 255).round())
-                    : AppColors.primary.withAlpha((0.12 * 255).round()),
+                    ? Colors.white.withOpacity(0.18)
+                    : AppColors.primary.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -588,8 +660,7 @@ class _GlobalViewCard extends StatelessWidget {
                   Text(
                     'Global View',
                     style: AppTextStyles.bodySmall.copyWith(
-                      color:
-                          isSelected ? Colors.white70 : AppColors.textSecondary,
+                      color: isSelected ? Colors.white70 : AppColors.textSecondary,
                     ),
                   ),
                 ],
@@ -599,7 +670,7 @@ class _GlobalViewCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withAlpha((0.18 * 255).round()),
+                  color: Colors.white.withOpacity(0.18),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -640,8 +711,8 @@ class _WorkspaceCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
             colors: [
-              workspace.color.withAlpha((0.85 * 255).round()),
-              workspace.color.withAlpha((0.6 * 255).round()),
+              workspace.color.withOpacity(0.85),
+              workspace.color.withOpacity(0.6),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -649,7 +720,6 @@ class _WorkspaceCard extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            // Decorative circle
             Positioned(
               right: -20,
               top: -20,
@@ -658,7 +728,7 @@ class _WorkspaceCard extends StatelessWidget {
                 height: 90,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withAlpha((0.12 * 255).round()),
+                  color: Colors.white.withOpacity(0.12),
                 ),
               ),
             ),
@@ -668,7 +738,6 @@ class _WorkspaceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Top row: emoji + actions
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -685,8 +754,7 @@ class _WorkspaceCard extends StatelessWidget {
                               width: 28,
                               height: 28,
                               decoration: BoxDecoration(
-                                color:
-                                    Colors.white.withAlpha((0.2 * 255).round()),
+                                color: Colors.white.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
@@ -696,15 +764,14 @@ class _WorkspaceCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           GestureDetector(
                             onTap: onDelete,
                             child: Container(
                               width: 28,
                               height: 28,
                               decoration: BoxDecoration(
-                                color:
-                                    Colors.white.withAlpha((0.2 * 255).round()),
+                                color: Colors.white.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
@@ -714,29 +781,10 @@ class _WorkspaceCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            onTap: onTap,
-                            child: Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color:
-                                    Colors.white.withAlpha((0.2 * 255).round()),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                color: Colors.white,
-                                size: 14,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ],
                   ),
-                  // Bottom: name + industry (all white)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -782,19 +830,9 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
   String _selectedEmoji = '🏢';
   int _selectedColorIndex = 0;
   String _selectedIndustry = 'General';
+  bool _isCreating = false;
 
-  final List<String> _emojis = [
-    '🏢',
-    '🏗️',
-    '🛒',
-    '💻',
-    '🏥',
-    '🍕',
-    '🎓',
-    '✈️',
-    '🏦',
-    '🎨'
-  ];
+  final List<String> _emojis = ['🏢', '🏗️', '🛒', '💻', '🏥', '🍕', '🎓', '✈️', '🏦', '🎨'];
   final List<String> _industries = [
     'General',
     'Construction',
@@ -831,10 +869,8 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                 ),
               ),
               const SizedBox(height: 20),
-              Text('New Business Workspace',
-                  style: AppTextStyles.headlineSmall),
+              Text('New Business Workspace', style: AppTextStyles.headlineSmall),
               const SizedBox(height: 20),
-              // Emoji picker
               Text('Choose Icon', style: AppTextStyles.labelLarge),
               const SizedBox(height: 10),
               SizedBox(
@@ -851,7 +887,7 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                       height: 48,
                       decoration: BoxDecoration(
                         color: _selectedEmoji == _emojis[i]
-                            ? AppColors.primary.withAlpha((0.12 * 255).round())
+                            ? AppColors.primary.withOpacity(0.12)
                             : AppColors.surfaceVariant,
                         border: _selectedEmoji == _emojis[i]
                             ? Border.all(color: AppColors.primary, width: 2)
@@ -867,7 +903,6 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                 ),
               ),
               const SizedBox(height: 16),
-              // Color picker
               Text('Color Theme', style: AppTextStyles.labelLarge),
               const SizedBox(height: 10),
               Row(
@@ -897,6 +932,7 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
               const SizedBox(height: 16),
               TextField(
                 controller: _nameController,
+                enabled: !_isCreating,
                 decoration: const InputDecoration(
                   hintText: 'Business Name (e.g., My Construction Co.)',
                   prefixIcon:
@@ -905,47 +941,60 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: _selectedIndustry,
+                value: _selectedIndustry,
                 decoration: const InputDecoration(
                   hintText: 'Industry',
                   prefixIcon:
                       Icon(Icons.category_rounded, color: AppColors.primary),
                 ),
                 items: _industries
-                    .map(
-                        (ind) => DropdownMenuItem(value: ind, child: Text(ind)))
+                    .map((ind) =>
+                        DropdownMenuItem(value: ind, child: Text(ind)))
                     .toList(),
-                onChanged: (val) =>
-                    setState(() => _selectedIndustry = val ?? 'General'),
+                onChanged: _isCreating
+                    ? null
+                    : (val) => setState(() => _selectedIndustry = val ?? 'General'),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _descController,
                 maxLines: 2,
+                enabled: !_isCreating,
                 decoration: const InputDecoration(
-                  hintText: 'Description (optional)',
+                  hintText: 'Description or Address (optional)',
                   prefixIcon:
                       Icon(Icons.notes_rounded, color: AppColors.primary),
                 ),
               ),
               const SizedBox(height: 24),
-              GradientButton(
-                label: 'Create Workspace',
-                onTap: () {
-                  if (_nameController.text.trim().isEmpty) return;
-                  final workspace = WorkspaceModel.create(
-                    name: _nameController.text.trim(),
-                    colorValue: AppColors.workspaceColors[_selectedColorIndex]
-                        .toARGB32(),
-                    emoji: _selectedEmoji,
-                    description: _descController.text.trim(),
-                    industry: _selectedIndustry,
-                    ownerEmail: AuthService.getSessionEmail(),
-                  );
-                  ref.read(workspacesProvider.notifier).addWorkspace(workspace);
-                  Navigator.pop(context);
-                },
-              ),
+              if (_isCreating)
+                const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                )
+              else
+                GradientButton(
+                  label: 'Create Workspace',
+                  onTap: () async {
+                    final name = _nameController.text.trim();
+                    if (name.isEmpty) return;
+
+                    setState(() => _isCreating = true);
+
+                    final workspace = WorkspaceModel.create(
+                      name: name,
+                      colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
+                      emoji: _selectedEmoji,
+                      description: _descController.text.trim(),
+                      industry: _selectedIndustry,
+                      ownerEmail: AuthService.getSessionEmail(),
+                    );
+
+                    await ref.read(workspacesProvider.notifier).addWorkspace(workspace);
+
+                    if (!context.mounted) return;
+                    Navigator.of(context).pop();
+                  },
+                ),
               const SizedBox(height: 8),
             ],
           ),

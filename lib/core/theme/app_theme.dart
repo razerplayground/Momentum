@@ -50,7 +50,7 @@ class AppTheme {
           statusBarIconBrightness: Brightness.dark,
         ),
       ),
-      cardTheme: CardThemeData(
+      cardTheme: CardTheme(
         color: AppColors.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(

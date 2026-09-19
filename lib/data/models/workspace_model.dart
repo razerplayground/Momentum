@@ -87,4 +87,36 @@ class WorkspaceModel extends HiveObject {
       ownerEmail: ownerEmail,
     );
   }
+
+  factory WorkspaceModel.fromJson(Map<String, dynamic> json) {
+    return WorkspaceModel(
+      id: json['id'] as String? ?? json['_id'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      name: json['name'] as String? ?? 'Untitled Workspace',
+      description: json['description'] as String? ?? json['address'] as String? ?? '',
+      emoji: json['emoji'] as String? ?? '🏢',
+      colorValue: json['colorValue'] is int
+          ? json['colorValue'] as int
+          : (json['color'] is int ? json['color'] as int : 0xFF6C5CE7),
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      industry: json['industry'] as String? ?? 'General',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'emoji': emoji,
+      'colorValue': colorValue,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      'industry': industry,
+    };
+  }
 }

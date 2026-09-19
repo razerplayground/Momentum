@@ -668,7 +668,7 @@ class DashboardScreen extends ConsumerWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.accentRed,
                     side: BorderSide(
-                      color: AppColors.accentRed.withValues(alpha: 0.35),
+                      color: AppColors.accentRed.withOpacity(0.35),
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -1401,7 +1401,7 @@ class _DashboardAddExpenseSheetState extends State<_DashboardAddExpenseSheet> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                initialValue: _projectId,
+                value: _projectId,
                 decoration: const InputDecoration(
                   hintText: 'Project',
                   prefixIcon:
