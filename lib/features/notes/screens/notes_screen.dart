@@ -11,12 +11,42 @@ import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/avatar_stack.dart';
 import '../../../shared/widgets/priority_chip.dart';
 
-class NotesScreen extends ConsumerWidget {
+class NotesScreen extends ConsumerStatefulWidget {
   const NotesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotesScreen> createState() => _NotesScreenState();
+}
+
+class _NotesScreenState extends ConsumerState<NotesScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _isSearchVisible = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<NoteModel> _filteredNotes(List<NoteModel> notes) {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return notes;
+
+    return notes.where((note) {
+      final searchableText = [
+        note.title,
+        note.content,
+        note.tags.join(' '),
+      ].join(' ').toLowerCase();
+      return searchableText.contains(query);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final notes = ref.watch(workspaceNotesProvider);
+    final filteredNotes = _filteredNotes(notes);
+    final hasSearchQuery = _searchController.text.trim().isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -31,7 +61,6 @@ class NotesScreen extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        // Back button shown only when navigated as a sub-route
                         if (context.canPop()) ...[
                           GestureDetector(
                             onTap: () => context.pop(),
@@ -43,57 +72,127 @@ class NotesScreen extends ConsumerWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Daily Notes', style: AppTextStyles.displaySmall),
-                            Text('${notes.length} Notes',
-                                style: AppTextStyles.bodySmall),
+                            Text('Daily Notes',
+                                style: AppTextStyles.displaySmall),
+                            Text(
+                              hasSearchQuery
+                                  ? '${filteredNotes.length} Results'
+                                  : '${notes.length} Notes',
+                              style: AppTextStyles.bodySmall,
+                            ),
                           ],
                         ),
                         const Spacer(),
-                        Container(
-                          width: 40, height: 40,
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            shape: BoxShape.circle,
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
-                                blurRadius: 8, offset: const Offset(0, 2))],
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isSearchVisible = !_isSearchVisible;
+                              if (!_isSearchVisible) {
+                                _searchController.clear();
+                              }
+                            });
+                          },
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: const Color.fromARGB(255, 255, 254, 254),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.06),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(Icons.search_rounded,
+                                color: AppColors.textPrimary, size: 20),
                           ),
-                          child: const Icon(Icons.search_rounded,
-                              color: AppColors.textPrimary, size: 20),
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          width: 40, height: 40,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             color: AppColors.surface,
                             shape: BoxShape.circle,
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06),
-                                blurRadius: 8, offset: const Offset(0, 2))],
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.06),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
                           child: const Icon(Icons.more_horiz_rounded,
                               color: AppColors.textPrimary, size: 20),
                         ),
                       ],
                     ),
+                    if (_isSearchVisible) ...[
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'Search notes...',
+                          prefixIcon: const Icon(Icons.search_rounded,
+                              color: AppColors.primary),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {});
+                                  },
+                                  icon: const Icon(Icons.close_rounded,
+                                      color: AppColors.textSecondary),
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: AppColors.surfaceVariant,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 20),
-                    // Browse Categories
-                    Text('Browse', style: AppTextStyles.headlineMedium),
+                    Text('Browse Categories',
+                        style: AppTextStyles.headlineMedium),
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        _BrowseItem(icon: Icons.star_rounded, label: 'Shortcut',
-                            color: AppColors.primary, bg: AppColors.cardPurple),
-                        _BrowseItem(icon: Icons.label_rounded, label: 'Tags',
-                            color: AppColors.accentBlue, bg: AppColors.cardBlue),
-                        _BrowseItem(icon: Icons.access_time_rounded, label: 'Recent',
-                            color: AppColors.accentOrange, bg: AppColors.cardOrange),
-                        _BrowseItem(icon: Icons.people_rounded, label: 'Shared',
-                            color: AppColors.accentPink, bg: AppColors.cardPink),
+                        _BrowseItem(
+                            icon: Icons.star_rounded,
+                            label: 'Shortcut',
+                            color: AppColors.primary,
+                            bg: AppColors.cardPurple),
+                        _BrowseItem(
+                            icon: Icons.label_rounded,
+                            label: 'Tags',
+                            color: AppColors.accentBlue,
+                            bg: AppColors.cardBlue),
+                        _BrowseItem(
+                            icon: Icons.access_time_rounded,
+                            label: 'Recent',
+                            color: AppColors.accentOrange,
+                            bg: AppColors.cardOrange),
+                        _BrowseItem(
+                            icon: Icons.people_rounded,
+                            label: 'Shared',
+                            color: AppColors.accentPink,
+                            bg: AppColors.cardPink),
                       ],
                     ),
                     const SizedBox(height: 24),
                     SectionHeader(
                       title: 'Daily Notes',
-                      subtitle: '${notes.length} Notes',
+                      subtitle: hasSearchQuery
+                          ? '${filteredNotes.length} Results'
+                          : '${notes.length} Notes',
                       actionLabel: 'See All',
                       onAction: () {},
                     ),
@@ -108,8 +207,22 @@ class NotesScreen extends ConsumerWidget {
               child: EmptyState(
                 icon: Icons.sticky_note_2_outlined,
                 title: 'No Notes Yet',
-                subtitle: 'Create your first note to capture ideas and information.',
+                subtitle:
+                    'Create your first note to capture ideas and information.',
                 actionLabel: 'Create Note',
+              ),
+            )
+          else if (filteredNotes.isEmpty)
+            SliverFillRemaining(
+              child: EmptyState(
+                icon: Icons.search_off_rounded,
+                title: 'No matching notes',
+                subtitle: 'Try a different keyword or clear the search filter.',
+                actionLabel: 'Clear Search',
+                onAction: () {
+                  _searchController.clear();
+                  setState(() {});
+                },
               ),
             )
           else
@@ -118,11 +231,12 @@ class NotesScreen extends ConsumerWidget {
                 (context, i) => Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
                   child: _NoteCard(
-                    note: notes[i],
-                    onTap: () => context.go('/home/notes/${notes[i].id}'),
+                    note: filteredNotes[i],
+                    onTap: () =>
+                        context.go('/home/notes/${filteredNotes[i].id}'),
                   ),
                 ),
-                childCount: notes.length,
+                childCount: filteredNotes.length,
               ),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -151,8 +265,11 @@ class _BrowseItem extends StatelessWidget {
   final Color color;
   final Color bg;
 
-  const _BrowseItem({required this.icon, required this.label,
-      required this.color, required this.bg});
+  const _BrowseItem(
+      {required this.icon,
+      required this.label,
+      required this.color,
+      required this.bg});
 
   @override
   Widget build(BuildContext context) {
@@ -160,9 +277,10 @@ class _BrowseItem extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 56, height: 56,
-            decoration: BoxDecoration(color: bg,
-                borderRadius: BorderRadius.circular(16)),
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+                color: bg, borderRadius: BorderRadius.circular(16)),
             child: Icon(icon, color: color, size: 26),
           ),
           const SizedBox(height: 6),
@@ -198,7 +316,8 @@ class _NoteCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(note.content,
                 style: AppTextStyles.bodyMedium,
-                maxLines: 2, overflow: TextOverflow.ellipsis),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
           ],
           const SizedBox(height: 12),
           Row(
@@ -217,8 +336,8 @@ class _NoteCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       DateFormat('dd MMM yyyy').format(note.createdAt),
-                      style: AppTextStyles.labelSmall.copyWith(
-                          color: AppColors.accentBlue),
+                      style: AppTextStyles.labelSmall
+                          .copyWith(color: AppColors.accentBlue),
                     ),
                   ],
                 ),
@@ -255,28 +374,38 @@ class _AddNoteSheetState extends State<_AddNoteSheet> {
   int _colorIndex = 0;
 
   final List<Color> _colors = [
-    AppColors.cardPurple, AppColors.cardBlue, AppColors.cardOrange,
-    AppColors.cardPink, AppColors.cardGreen, AppColors.cardTeal,
+    AppColors.cardPurple,
+    AppColors.cardBlue,
+    AppColors.cardOrange,
+    AppColors.cardPink,
+    AppColors.cardGreen,
+    AppColors.cardTeal,
   ];
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('New Note', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 14),
             // Color picker
-            Row(children: _colors.asMap().entries.map((entry) {
+            Row(
+                children: _colors.asMap().entries.map((entry) {
               final i = entry.key;
               final c = entry.value;
               return GestureDetector(
@@ -284,9 +413,11 @@ class _AddNoteSheetState extends State<_AddNoteSheet> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   margin: const EdgeInsets.only(right: 8),
-                  width: 28, height: 28,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
-                    color: c, shape: BoxShape.circle,
+                    color: c,
+                    shape: BoxShape.circle,
                     border: _colorIndex == i
                         ? Border.all(color: AppColors.primary, width: 2.5)
                         : null,
@@ -295,28 +426,38 @@ class _AddNoteSheetState extends State<_AddNoteSheet> {
               );
             }).toList()),
             const SizedBox(height: 14),
-            TextField(controller: _titleController,
-                decoration: const InputDecoration(hintText: 'Note Title',
-                    prefixIcon: Icon(Icons.title_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                    hintText: 'Note Title',
+                    prefixIcon:
+                        Icon(Icons.title_rounded, color: AppColors.primary))),
             const SizedBox(height: 12),
-            TextField(controller: _contentController, maxLines: 4,
-                decoration: const InputDecoration(hintText: 'Write your note...',
-                    prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _contentController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                    hintText: 'Write your note...',
+                    prefixIcon:
+                        Icon(Icons.notes_rounded, color: AppColors.primary))),
             const SizedBox(height: 24),
-            GradientButton(label: 'Save Note', onTap: () {
-              if (_titleController.text.trim().isEmpty) return;
-              final workspaceId = widget.parentRef.read(activeWorkspaceIdProvider);
-              if (workspaceId == null) return;
-              final note = NoteModel.create(
-                workspaceId: workspaceId,
-                title: _titleController.text.trim(),
-                content: _contentController.text.trim(),
-                priority: _priority,
-                colorValue: _colors[_colorIndex].value,
-              );
-              widget.parentRef.read(notesProvider.notifier).addNote(note);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Save Note',
+                onTap: () {
+                  if (_titleController.text.trim().isEmpty) return;
+                  final workspaceId =
+                      widget.parentRef.read(activeWorkspaceIdProvider);
+                  if (workspaceId == null) return;
+                  final note = NoteModel.create(
+                    workspaceId: workspaceId,
+                    title: _titleController.text.trim(),
+                    content: _contentController.text.trim(),
+                    priority: _priority,
+                    colorValue: _colors[_colorIndex].value,
+                  );
+                  widget.parentRef.read(notesProvider.notifier).addNote(note);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
         ),

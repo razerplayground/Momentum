@@ -27,9 +27,11 @@ class AppConstants {
   static const int employeeTypeId = 6;
   static const int followupTypeId = 7;
   static const int expenseTypeId = 8;
+  static const int subtaskTypeId = 9;
 
   // Shared Prefs Keys
   static const String activeWorkspaceKey = 'active_workspace_id';
+  static const String globalViewKey = 'global_view_enabled';
   static const String onboardingDoneKey = 'onboarding_done';
 
   // Pagination

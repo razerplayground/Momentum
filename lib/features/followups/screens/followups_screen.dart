@@ -153,19 +153,29 @@ class _FollowupCard extends StatelessWidget {
       default: return Icons.track_changes_rounded;
     }
   }
-
-  Color get _statusColor {
-    switch (followup.statusStr) {
-      case 'done': return AppColors.statusDone;
-      case 'overdue': return AppColors.statusOverdue;
-      default: return AppColors.statusPending;
-    }
+bool get _isOverdue {
+  return followup.statusStr != 'done' &&
+      followup.dueDate.isBefore(DateTime.now());
+}
+ Color get _statusColor {
+  if (_isOverdue) {
+    return AppColors.statusOverdue;
   }
+
+  switch (followup.statusStr) {
+    case 'done':
+      return AppColors.statusDone;
+    default:
+      return AppColors.statusPending;
+  }
+}
 
   @override
   Widget build(BuildContext context) {
     return AnimatedCard(
-      child: Row(
+      
+      
+            child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Type icon
@@ -218,6 +228,7 @@ class _FollowupCard extends StatelessWidget {
             ),
         ],
       ),
+      
     );
   }
 }

@@ -28,6 +28,7 @@ class FollowupModelAdapter extends TypeAdapter<FollowupModel> {
       assigneeIds: (fields[11] as List).cast<String>(),
       response: fields[12] as String?,
       completedAt: fields[13] as DateTime?,
+      
     );
   }
 

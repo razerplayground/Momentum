@@ -23,6 +23,8 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   @override
   Widget build(BuildContext context) {
     final allTasks = ref.watch(workspaceTasksProvider);
+    final isGlobalView = ref.watch(globalViewEnabledProvider);
+    final workspaces = ref.watch(workspacesProvider);
     final today = ref.watch(todayTasksProvider);
     final overdue = ref.watch(overdueTasksProvider);
 
@@ -34,6 +36,18 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                 ? overdue
                 : allTasks.where((t) => t.isCompleted).toList();
 
+final sortedTasks = [...filtered];
+
+sortedTasks.sort((a, b) {
+  const priorityOrder = {
+    'high': 0,
+    'medium': 1,
+    'low': 2,
+  };
+
+  return (priorityOrder[a.priorityStr] ?? 3)
+      .compareTo(priorityOrder[b.priorityStr] ?? 3);
+});
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(
@@ -57,14 +71,18 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                                   size: 20, color: AppColors.textPrimary),
                             ),
                             const SizedBox(width: 8),
-                            Text('Back', style: AppTextStyles.titleMedium
-                                .copyWith(color: AppColors.textSecondary)),
+                            Text('Back',
+                                style: AppTextStyles.titleMedium
+                                    .copyWith(color: AppColors.textSecondary)),
                           ],
                         ),
                       ),
                     Text('Tasks', style: AppTextStyles.displaySmall),
                     const SizedBox(height: 4),
-                    Text('${allTasks.length} total • ${today.length} today',
+                    Text(
+                        isGlobalView
+                            ? '${allTasks.length} total across all workspaces • ${today.length} today'
+                            : '${allTasks.length} total • ${today.length} today',
                         style: AppTextStyles.bodySmall),
                     const SizedBox(height: 16),
                     // Stat Cards
@@ -74,23 +92,33 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                         scrollDirection: Axis.horizontal,
                         children: [
                           _TaskStatCard(
-                            label: 'All', count: allTasks.length,
-                            color: AppColors.primary, isSelected: _filterStatus == 'all',
+                            label: 'All',
+                            count: allTasks.length,
+                            color: AppColors.primary,
+                            isSelected: _filterStatus == 'all',
                             onTap: () => setState(() => _filterStatus = 'all'),
                           ),
                           _TaskStatCard(
-                            label: 'Today', count: today.length,
-                            color: AppColors.accentBlue, isSelected: _filterStatus == 'today',
-                            onTap: () => setState(() => _filterStatus = 'today'),
+                            label: 'Today',
+                            count: today.length,
+                            color: AppColors.accentBlue,
+                            isSelected: _filterStatus == 'today',
+                            onTap: () =>
+                                setState(() => _filterStatus = 'today'),
                           ),
                           _TaskStatCard(
-                            label: 'Overdue', count: overdue.length,
-                            color: AppColors.accentRed, isSelected: _filterStatus == 'overdue',
-                            onTap: () => setState(() => _filterStatus = 'overdue'),
+                            label: 'Overdue',
+                            count: overdue.length,
+                            color: AppColors.accentRed,
+                            isSelected: _filterStatus == 'overdue',
+                            onTap: () =>
+                                setState(() => _filterStatus = 'overdue'),
                           ),
                           _TaskStatCard(
-                            label: 'Done', count: allTasks.where((t) => t.isCompleted).length,
-                            color: AppColors.accentGreen, isSelected: _filterStatus == 'done',
+                            label: 'Done',
+                            count: allTasks.where((t) => t.isCompleted).length,
+                            color: AppColors.accentGreen,
+                            isSelected: _filterStatus == 'done',
                             onTap: () => setState(() => _filterStatus = 'done'),
                           ),
                         ],
@@ -102,7 +130,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
               ),
             ),
           ),
-          if (filtered.isEmpty)
+          if (sortedTasks.isEmpty)
             const SliverFillRemaining(
               child: EmptyState(
                 icon: Icons.task_alt_outlined,
@@ -117,13 +145,20 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                 (context, i) => Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
                   child: _TaskCard(
-                    task: filtered[i],
-                    onToggle: () => ref.read(tasksProvider.notifier)
-                        .toggleComplete(filtered[i].id),
-                    onTap: () => context.go('/home/tasks/${filtered[i].id}'),
+                    task: sortedTasks[i],
+                    isGlobalView: isGlobalView,
+                    workspaceName: workspaces
+                        .where((workspace) =>
+                            workspace.id == sortedTasks[i].workspaceId)
+                        .map((workspace) => workspace.name)
+                        .firstOrNull,
+                    onToggle: () => ref
+                        .read(tasksProvider.notifier)
+                        .toggleComplete(sortedTasks[i].id),
+                    onTap: () => context.go('/home/tasks/${sortedTasks[i].id}'),
                   ),
                 ),
-                childCount: filtered.length,
+                childCount: sortedTasks.length,
               ),
             ),
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -154,8 +189,11 @@ class _TaskStatCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _TaskStatCard({
-    required this.label, required this.count,
-    required this.color, required this.isSelected, required this.onTap,
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
   });
 
   @override
@@ -171,8 +209,12 @@ class _TaskStatCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: isSelected ? null : Border.all(color: AppColors.border),
           boxShadow: isSelected
-              ? [BoxShadow(color: color.withOpacity(0.3),
-                  blurRadius: 12, offset: const Offset(0, 4))]
+              ? [
+                  BoxShadow(
+                      color: color.withOpacity(0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4))
+                ]
               : null,
         ),
         child: Column(
@@ -184,7 +226,8 @@ class _TaskStatCard extends StatelessWidget {
                     fontWeight: FontWeight.w800)),
             Text(label,
                 style: AppTextStyles.labelMedium.copyWith(
-                    color: isSelected ? Colors.white70 : AppColors.textSecondary)),
+                    color:
+                        isSelected ? Colors.white70 : AppColors.textSecondary)),
           ],
         ),
       ),
@@ -194,10 +237,17 @@ class _TaskStatCard extends StatelessWidget {
 
 class _TaskCard extends StatelessWidget {
   final TaskModel task;
+  final bool isGlobalView;
+  final String? workspaceName;
   final VoidCallback onToggle;
   final VoidCallback onTap;
 
-  const _TaskCard({required this.task, required this.onToggle, required this.onTap});
+  const _TaskCard(
+      {required this.task,
+      required this.isGlobalView,
+      required this.workspaceName,
+      required this.onToggle,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -212,17 +262,21 @@ class _TaskCard extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                width: 22, height: 22,
+                width: 22,
+                height: 22,
                 decoration: BoxDecoration(
-                  color: task.isCompleted ? AppColors.primary : Colors.transparent,
+                  color:
+                      task.isCompleted ? AppColors.primary : Colors.transparent,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: task.isCompleted ? AppColors.primary : AppColors.border,
+                    color:
+                        task.isCompleted ? AppColors.primary : AppColors.border,
                     width: 2,
                   ),
                 ),
                 child: task.isCompleted
-                    ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                    ? const Icon(Icons.check_rounded,
+                        color: Colors.white, size: 14)
                     : null,
               ),
             ),
@@ -235,40 +289,69 @@ class _TaskCard extends StatelessWidget {
                 Text(
                   task.title,
                   style: AppTextStyles.titleMedium.copyWith(
-                    decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                    color: task.isCompleted ? AppColors.textSecondary : AppColors.textPrimary,
+                    decoration:
+                        task.isCompleted ? TextDecoration.lineThrough : null,
+                    color: task.isCompleted
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
                   ),
                 ),
                 if (task.description.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(task.description,
                       style: AppTextStyles.bodySmall,
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
                 ],
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     PriorityChip(priority: task.priorityStr, compact: true),
                     const SizedBox(width: 8),
-                    if (task.dueDate != null) Row(
-                      children: [
-                        Icon(Icons.calendar_today_rounded, size: 12,
-                            color: task.dueDate!.isBefore(DateTime.now())
-                                ? AppColors.accentRed : AppColors.textSecondary),
-                        const SizedBox(width: 4),
-                        Text(
-                          DateFormat('dd MMM').format(task.dueDate!),
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: task.dueDate!.isBefore(DateTime.now())
-                                ? AppColors.accentRed : AppColors.textSecondary,
+                    if (task.dueDate != null)
+                      Row(
+                        children: [
+                          Icon(Icons.calendar_today_rounded,
+                              size: 12,
+                              color: task.dueDate!.isBefore(DateTime.now())
+                                  ? AppColors.accentRed
+                                  : AppColors.textSecondary),
+                          const SizedBox(width: 4),
+                          Text(
+                            DateFormat('dd MMM').format(task.dueDate!),
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: task.dueDate!.isBefore(DateTime.now())
+                                  ? AppColors.accentRed
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    const Spacer(),
+                    if (isGlobalView)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary
+                                .withAlpha((0.12 * 255).round()),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            workspaceName ?? 'Unknown Workspace',
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-                    const Spacer(),
+                      ),
                     if (task.tags.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: AppColors.surfaceVariant,
                           borderRadius: BorderRadius.circular(8),
@@ -305,33 +388,47 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('New Task', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 16),
-            TextField(controller: _titleController,
-                decoration: const InputDecoration(hintText: 'Task Title',
-                    prefixIcon: Icon(Icons.task_alt_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                    hintText: 'Task Title',
+                    prefixIcon: Icon(Icons.task_alt_rounded,
+                        color: AppColors.primary))),
             const SizedBox(height: 12),
-            TextField(controller: _descController, maxLines: 2,
-                decoration: const InputDecoration(hintText: 'Description (optional)',
-                    prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _descController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    hintText: 'Description (optional)',
+                    prefixIcon:
+                        Icon(Icons.notes_rounded, color: AppColors.primary))),
             const SizedBox(height: 12),
             Row(
               children: ['low', 'medium', 'high'].map((p) {
                 final isSelected = _priority == p;
-                final color = p == 'high' ? AppColors.accentRed
-                    : p == 'medium' ? AppColors.accentOrange
-                    : AppColors.accentGreen;
+                final color = p == 'high'
+                    ? AppColors.accentRed
+                    : p == 'medium'
+                        ? AppColors.accentOrange
+                        : AppColors.accentGreen;
                 return Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -341,14 +438,21 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(
-                          color: isSelected ? color.withOpacity(0.12) : AppColors.surfaceVariant,
-                          border: isSelected ? Border.all(color: color, width: 2) : null,
+                          color: isSelected
+                              ? color.withOpacity(0.12)
+                              : AppColors.surfaceVariant,
+                          border: isSelected
+                              ? Border.all(color: color, width: 2)
+                              : null,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Center(child: Text(p.toUpperCase(),
-                            style: AppTextStyles.labelMedium.copyWith(
-                                color: isSelected ? color : AppColors.textSecondary,
-                                fontWeight: FontWeight.w700))),
+                        child: Center(
+                            child: Text(p.toUpperCase(),
+                                style: AppTextStyles.labelMedium.copyWith(
+                                    color: isSelected
+                                        ? color
+                                        : AppColors.textSecondary,
+                                    fontWeight: FontWeight.w700))),
                       ),
                     ),
                   ),
@@ -356,20 +460,23 @@ class _AddTaskSheetState extends State<_AddTaskSheet> {
               }).toList(),
             ),
             const SizedBox(height: 24),
-            GradientButton(label: 'Create Task', onTap: () {
-              if (_titleController.text.trim().isEmpty) return;
-              final workspaceId = widget.parentRef.read(activeWorkspaceIdProvider);
-              if (workspaceId == null) return;
-              final task = TaskModel.create(
-                workspaceId: workspaceId,
-                title: _titleController.text.trim(),
-                description: _descController.text.trim(),
-                priority: _priority,
-                dueDate: _dueDate,
-              );
-              widget.parentRef.read(tasksProvider.notifier).addTask(task);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Create Task',
+                onTap: () {
+                  if (_titleController.text.trim().isEmpty) return;
+                  final workspaceId =
+                      widget.parentRef.read(activeWorkspaceIdProvider);
+                  if (workspaceId == null) return;
+                  final task = TaskModel.create(
+                    workspaceId: workspaceId,
+                    title: _titleController.text.trim(),
+                    description: _descController.text.trim(),
+                    priority: _priority,
+                    dueDate: _dueDate,
+                  );
+                  widget.parentRef.read(tasksProvider.notifier).addTask(task);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
         ),

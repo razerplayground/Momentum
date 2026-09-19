@@ -48,7 +48,8 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                 color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
@@ -58,29 +59,49 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
             Text('Quick Add', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 16),
             _QuickAddItem(
-              icon: Icons.folder_rounded, label: 'New Project',
+              icon: Icons.folder_rounded,
+              label: 'New Project',
               color: const Color(0xFF7C3AED),
-              onTap: () { Navigator.pop(context); context.go('/home/projects'); },
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/home/projects');
+              },
             ),
             _QuickAddItem(
-              icon: Icons.task_alt_rounded, label: 'New Task',
+              icon: Icons.task_alt_rounded,
+              label: 'New Task',
               color: const Color(0xFF3B82F6),
-              onTap: () { Navigator.pop(context); context.go('/home/tasks'); },
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/home/tasks');
+              },
             ),
             _QuickAddItem(
-              icon: Icons.sticky_note_2_rounded, label: 'New Note',
+              icon: Icons.sticky_note_2_rounded,
+              label: 'New Note',
               color: const Color(0xFF22C55E),
-              onTap: () { Navigator.pop(context); context.go('/home/notes'); },
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/home/notes');
+              },
             ),
             _QuickAddItem(
-              icon: Icons.event_rounded, label: 'New Appointment',
+              icon: Icons.event_rounded,
+              label: 'New Appointment',
               color: const Color(0xFFF59E0B),
-              onTap: () { Navigator.pop(context); context.go('/home/calendar'); },
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/home/calendar');
+              },
             ),
             _QuickAddItem(
-              icon: Icons.people_rounded, label: 'Add Employee',
+              icon: Icons.people_rounded,
+              label: 'Add Employee',
               color: const Color(0xFFEC4899),
-              onTap: () { Navigator.pop(context); context.go('/home/employees'); },
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/home/employees');
+              },
             ),
             const SizedBox(height: 8),
           ],
@@ -101,15 +122,23 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
       const CalendarScreen(),
     ];
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
-      ),
-      bottomNavigationBar: AppBottomNav(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
-        onFabTap: _onFabTap,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && context.mounted) {
+          context.go('/workspaces');
+        }
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _currentIndex,
+          children: screens,
+        ),
+        bottomNavigationBar: AppBottomNav(
+          currentIndex: _currentIndex,
+          onTap: (i) => setState(() => _currentIndex = i),
+          onFabTap: _onFabTap,
+        ),
       ),
     );
   }
@@ -122,15 +151,18 @@ class _QuickAddItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuickAddItem({
-    required this.icon, required this.label,
-    required this.color, required this.onTap,
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: Container(
-        width: 44, height: 44,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: color.withOpacity(0.12),
           borderRadius: BorderRadius.circular(12),

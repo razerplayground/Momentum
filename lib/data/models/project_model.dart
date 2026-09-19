@@ -1,8 +1,10 @@
 import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
 
 part 'project_model.g.dart';
 
 enum ProjectStatus { active, paused, completed, cancelled }
+
 enum ProjectPriority { low, medium, high, critical }
 
 @HiveType(typeId: 1)
@@ -82,13 +84,13 @@ class ProjectModel extends HiveObject {
     this.totalTasks = 0,
   });
 
-  ProjectStatus get status => ProjectStatus.values.firstWhere(
-      (e) => e.name == statusStr,
-      orElse: () => ProjectStatus.active);
+  ProjectStatus get status =>
+      ProjectStatus.values.firstWhere((e) => e.name == statusStr,
+          orElse: () => ProjectStatus.active);
 
-  ProjectPriority get priority => ProjectPriority.values.firstWhere(
-      (e) => e.name == priorityStr,
-      orElse: () => ProjectPriority.medium);
+  ProjectPriority get priority =>
+      ProjectPriority.values.firstWhere((e) => e.name == priorityStr,
+          orElse: () => ProjectPriority.medium);
 
   double get progress =>
       totalTasks == 0 ? 0 : (completedTasks / totalTasks).clamp(0.0, 1.0);
@@ -106,7 +108,7 @@ class ProjectModel extends HiveObject {
     double budget = 0,
   }) {
     return ProjectModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: Uuid().v4(),
       workspaceId: workspaceId,
       name: name,
       description: description,

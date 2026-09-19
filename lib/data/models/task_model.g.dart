@@ -3,6 +3,46 @@
 
 part of 'task_model.dart';
 
+class SubtaskModelAdapter extends TypeAdapter<SubtaskModel> {
+  @override
+  final int typeId = 9;
+
+  @override
+  SubtaskModel read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return SubtaskModel(
+      id: fields[0] as String,
+      title: fields[1] as String,
+      isCompleted: fields[2] as bool,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, SubtaskModel obj) {
+    writer
+      ..writeByte(3)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.title)
+      ..writeByte(2)
+      ..write(obj.isCompleted);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SubtaskModelAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
 class TaskModelAdapter extends TypeAdapter<TaskModel> {
   @override
   final int typeId = 2;
@@ -28,6 +68,9 @@ class TaskModelAdapter extends TypeAdapter<TaskModel> {
       tags: (fields[11] as List).cast<String>(),
       isCompleted: fields[12] as bool,
       completedAt: fields[13] as DateTime?,
+      subtasks: fields.containsKey(14)
+          ? (fields[14] as List).cast<SubtaskModel>()
+          : <SubtaskModel>[],
     );
   }
 
@@ -35,6 +78,7 @@ class TaskModelAdapter extends TypeAdapter<TaskModel> {
   void write(BinaryWriter writer, TaskModel obj) {
     writer
       ..writeByte(14)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -62,7 +106,10 @@ class TaskModelAdapter extends TypeAdapter<TaskModel> {
       ..writeByte(12)
       ..write(obj.isCompleted)
       ..writeByte(13)
-      ..write(obj.completedAt);
+      ..write(obj.completedAt)
+      ..write(obj.completedAt)
+      ..writeByte(14)
+      ..write(obj.subtasks);
   }
 
   @override

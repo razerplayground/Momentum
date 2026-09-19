@@ -29,6 +29,9 @@ class WorkspaceModel extends HiveObject {
   @HiveField(7)
   String industry; // Construction, Tech, Retail, etc.
 
+  @HiveField(8)
+  String ownerEmail;
+
   WorkspaceModel({
     required this.id,
     required this.name,
@@ -38,6 +41,7 @@ class WorkspaceModel extends HiveObject {
     required this.createdAt,
     required this.updatedAt,
     this.industry = 'General',
+    this.ownerEmail = '',
   });
 
   Color get color => Color(colorValue);
@@ -48,6 +52,7 @@ class WorkspaceModel extends HiveObject {
     String? emoji,
     int? colorValue,
     String? industry,
+    String? ownerEmail,
   }) {
     return WorkspaceModel(
       id: id,
@@ -58,6 +63,7 @@ class WorkspaceModel extends HiveObject {
       createdAt: createdAt,
       updatedAt: DateTime.now(),
       industry: industry ?? this.industry,
+      ownerEmail: ownerEmail ?? this.ownerEmail,
     );
   }
 
@@ -67,6 +73,7 @@ class WorkspaceModel extends HiveObject {
     String emoji = '🏢',
     String description = '',
     String industry = 'General',
+    String ownerEmail = '',
   }) {
     return WorkspaceModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -77,6 +84,7 @@ class WorkspaceModel extends HiveObject {
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
       industry: industry,
+      ownerEmail: ownerEmail,
     );
   }
 }

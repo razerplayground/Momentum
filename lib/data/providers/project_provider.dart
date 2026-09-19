@@ -4,16 +4,28 @@ import '../models/project_model.dart';
 import '../../core/constants/app_constants.dart';
 import 'workspace_provider.dart';
 
-final projectsProvider = StateNotifierProvider<ProjectNotifier, List<ProjectModel>>((ref) {
+final projectsProvider =
+    StateNotifierProvider<ProjectNotifier, List<ProjectModel>>((ref) {
   return ProjectNotifier(ref);
 });
 
-final workspaceProjectsProvider = Provider<List<ProjectModel>>((ref) {
+final allProjectsProvider = Provider<List<ProjectModel>>((ref) {
   final projects = ref.watch(projectsProvider);
+  return projects.toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+});
+
+final workspaceProjectsProvider = Provider<List<ProjectModel>>((ref) {
+  final projects = ref.watch(allProjectsProvider);
+  final userWorkspaceIds = ref.watch(userWorkspaceIdsProvider);
+  final isGlobalView = ref.watch(globalViewEnabledProvider);
   final activeId = ref.watch(activeWorkspaceIdProvider);
+  if (isGlobalView) {
+    return projects
+        .where((project) => userWorkspaceIds.contains(project.workspaceId))
+        .toList();
+  }
   if (activeId == null) return [];
-  return projects.where((p) => p.workspaceId == activeId).toList()
-    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  return projects.where((p) => p.workspaceId == activeId).toList();
 });
 
 final projectByIdProvider = Provider.family<ProjectModel?, String>((ref, id) {
@@ -57,9 +69,8 @@ class ProjectNotifier extends StateNotifier<List<ProjectModel>> {
 
   Future<void> updateFinancials(String projectId) async {
     final expenseBox = Hive.box<dynamic>(AppConstants.expenseBox);
-    final expenses = expenseBox.values
-        .where((e) => e.projectId == projectId)
-        .toList();
+    final expenses =
+        expenseBox.values.where((e) => e.projectId == projectId).toList();
 
     double income = 0, expense = 0;
     for (final e in expenses) {

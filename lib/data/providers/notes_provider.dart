@@ -4,13 +4,22 @@ import '../models/note_model.dart';
 import '../../core/constants/app_constants.dart';
 import 'workspace_provider.dart';
 
-final notesProvider = StateNotifierProvider<NoteNotifier, List<NoteModel>>((ref) {
+final notesProvider =
+    StateNotifierProvider<NoteNotifier, List<NoteModel>>((ref) {
   return NoteNotifier(ref);
 });
 
 final workspaceNotesProvider = Provider<List<NoteModel>>((ref) {
   final notes = ref.watch(notesProvider);
+  final userWorkspaceIds = ref.watch(userWorkspaceIdsProvider);
   final activeId = ref.watch(activeWorkspaceIdProvider);
+  final isGlobalView = ref.watch(globalViewEnabledProvider);
+  if (isGlobalView) {
+    return notes
+        .where((note) => userWorkspaceIds.contains(note.workspaceId))
+        .toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
   if (activeId == null) return [];
   return notes.where((n) => n.workspaceId == activeId).toList()
     ..sort((a, b) {

@@ -2,24 +2,44 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/workspace_model.dart';
 import '../../core/constants/app_constants.dart';
+import '../../features/auth/auth_service.dart';
 
 final workspaceBoxProvider = Provider<Box<WorkspaceModel>>((ref) {
   return Hive.box<WorkspaceModel>(AppConstants.workspaceBox);
 });
 
-final activeWorkspaceIdProvider = StateProvider<String?>((ref) {
+final activeWorkspaceIdProvider = StateProvider.autoDispose<String?>((ref) {
   final box = Hive.box(AppConstants.settingsBox);
-  return box.get(AppConstants.activeWorkspaceKey) as String?;
+  return box.get(AuthService.userSettingKey(AppConstants.activeWorkspaceKey))
+      as String?;
 });
 
-final workspacesProvider = StateNotifierProvider<WorkspaceNotifier, List<WorkspaceModel>>((ref) {
+final globalViewEnabledProvider = StateProvider.autoDispose<bool>((ref) {
+  final box = Hive.box(AppConstants.settingsBox);
+  final enabled =
+      box.get(AuthService.userSettingKey(AppConstants.globalViewKey));
+  return enabled is bool ? enabled : false;
+});
+
+final workspacesProvider =
+    StateNotifierProvider.autoDispose<WorkspaceNotifier, List<WorkspaceModel>>(
+        (ref) {
   return WorkspaceNotifier(ref);
+});
+
+final userWorkspaceIdsProvider = Provider<Set<String>>((ref) {
+  return ref.watch(workspacesProvider).map((workspace) => workspace.id).toSet();
 });
 
 final activeWorkspaceProvider = Provider<WorkspaceModel?>((ref) {
   final workspaces = ref.watch(workspacesProvider);
   final activeId = ref.watch(activeWorkspaceIdProvider);
-  if (activeId == null || workspaces.isEmpty) return null;
+  final isGlobalView = ref.watch(globalViewEnabledProvider);
+
+  if (isGlobalView) return null;
+  if (workspaces.isEmpty) return null;
+  if (activeId == null) return workspaces.first;
+
   try {
     return workspaces.firstWhere((w) => w.id == activeId);
   } catch (_) {
@@ -36,7 +56,15 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
 
   void _loadWorkspaces() {
     final box = Hive.box<WorkspaceModel>(AppConstants.workspaceBox);
-    state = box.values.toList();
+    final email = AuthService.getSessionEmail().trim().toLowerCase();
+    final workspaces = box.values.toList();
+    for (final workspace
+        in workspaces.where((item) => item.ownerEmail.isEmpty)) {
+      workspace.ownerEmail = email;
+      box.put(workspace.id, workspace);
+    }
+    state =
+        workspaces.where((workspace) => workspace.ownerEmail == email).toList();
   }
 
   Future<void> addWorkspace(WorkspaceModel workspace) async {
@@ -64,7 +92,15 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
 
   void setActiveWorkspace(String id) {
     final box = Hive.box(AppConstants.settingsBox);
-    box.put(AppConstants.activeWorkspaceKey, id);
+    box.put(AuthService.userSettingKey(AppConstants.activeWorkspaceKey), id);
+    box.put(AuthService.userSettingKey(AppConstants.globalViewKey), false);
     _ref.read(activeWorkspaceIdProvider.notifier).state = id;
+    _ref.read(globalViewEnabledProvider.notifier).state = false;
+  }
+
+  void setGlobalView(bool enabled) {
+    final box = Hive.box(AppConstants.settingsBox);
+    box.put(AuthService.userSettingKey(AppConstants.globalViewKey), enabled);
+    _ref.read(globalViewEnabledProvider.notifier).state = enabled;
   }
 }

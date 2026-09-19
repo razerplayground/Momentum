@@ -8,7 +8,8 @@ import '../../core/constants/app_constants.dart';
 import 'workspace_provider.dart';
 
 // ─── Appointments ───────────────────────────────────────────────
-final appointmentsProvider = StateNotifierProvider<AppointmentNotifier, List<AppointmentModel>>((ref) {
+final appointmentsProvider =
+    StateNotifierProvider<AppointmentNotifier, List<AppointmentModel>>((ref) {
   return AppointmentNotifier(ref);
 });
 
@@ -48,9 +49,27 @@ final monthAppointmentsProvider = Provider<List<AppointmentModel>>((ref) {
       .toList();
 });
 
+final workspaceAppointmentsProvider = Provider<List<AppointmentModel>>((ref) {
+  final appointments = ref.watch(appointmentsProvider);
+  final userWorkspaceIds = ref.watch(userWorkspaceIdsProvider);
+  final activeId = ref.watch(activeWorkspaceIdProvider);
+  final isGlobalView = ref.watch(globalViewEnabledProvider);
+  final filtered = isGlobalView
+      ? appointments
+          .where((appointment) =>
+              userWorkspaceIds.contains(appointment.workspaceId))
+          .toList()
+      : activeId == null
+          ? <AppointmentModel>[]
+          : appointments.where((a) => a.workspaceId == activeId).toList();
+  return filtered..sort((a, b) => a.startTime.compareTo(b.startTime));
+});
+
 class AppointmentNotifier extends StateNotifier<List<AppointmentModel>> {
   final Ref _ref;
-  AppointmentNotifier(this._ref) : super([]) { _load(); }
+  AppointmentNotifier(this._ref) : super([]) {
+    _load();
+  }
 
   void _load() {
     final box = Hive.box<AppointmentModel>(AppConstants.appointmentBox);
@@ -77,7 +96,8 @@ class AppointmentNotifier extends StateNotifier<List<AppointmentModel>> {
 }
 
 // ─── Todos ───────────────────────────────────────────────────────
-final todosProvider = StateNotifierProvider<TodoNotifier, List<TodoModel>>((ref) {
+final todosProvider =
+    StateNotifierProvider<TodoNotifier, List<TodoModel>>((ref) {
   return TodoNotifier(ref);
 });
 
@@ -88,12 +108,16 @@ final workspaceTodosProvider = Provider<List<TodoModel>>((ref) {
   return todos.where((t) => t.workspaceId == activeId).toList()
     ..sort((a, b) => a.isCompleted == b.isCompleted
         ? b.createdAt.compareTo(a.createdAt)
-        : a.isCompleted ? 1 : -1);
+        : a.isCompleted
+            ? 1
+            : -1);
 });
 
 class TodoNotifier extends StateNotifier<List<TodoModel>> {
   final Ref _ref;
-  TodoNotifier(this._ref) : super([]) { _load(); }
+  TodoNotifier(this._ref) : super([]) {
+    _load();
+  }
 
   void _load() {
     final box = Hive.box<TodoModel>(AppConstants.todoBox);
@@ -135,7 +159,8 @@ class TodoNotifier extends StateNotifier<List<TodoModel>> {
 }
 
 // ─── Follow-ups ──────────────────────────────────────────────────
-final followupsProvider = StateNotifierProvider<FollowupNotifier, List<FollowupModel>>((ref) {
+final followupsProvider =
+    StateNotifierProvider<FollowupNotifier, List<FollowupModel>>((ref) {
   return FollowupNotifier(ref);
 });
 
@@ -147,7 +172,8 @@ final workspaceFollowupsProvider = Provider<List<FollowupModel>>((ref) {
     ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
 });
 
-final projectFollowupsProvider = Provider.family<List<FollowupModel>, String>((ref, projectId) {
+final projectFollowupsProvider =
+    Provider.family<List<FollowupModel>, String>((ref, projectId) {
   final items = ref.watch(followupsProvider);
   return items.where((f) => f.projectId == projectId).toList()
     ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
@@ -155,7 +181,9 @@ final projectFollowupsProvider = Provider.family<List<FollowupModel>, String>((r
 
 class FollowupNotifier extends StateNotifier<List<FollowupModel>> {
   final Ref _ref;
-  FollowupNotifier(this._ref) : super([]) { _load(); }
+  FollowupNotifier(this._ref) : super([]) {
+    _load();
+  }
 
   void _load() {
     final box = Hive.box<FollowupModel>(AppConstants.followupBox);
@@ -199,19 +227,43 @@ class FollowupNotifier extends StateNotifier<List<FollowupModel>> {
 }
 
 // ─── Expenses ────────────────────────────────────────────────────
-final expensesProvider = StateNotifierProvider<ExpenseNotifier, List<ExpenseModel>>((ref) {
+final expensesProvider =
+    StateNotifierProvider<ExpenseNotifier, List<ExpenseModel>>((ref) {
   return ExpenseNotifier(ref);
 });
 
-final projectExpensesProvider = Provider.family<List<ExpenseModel>, String>((ref, projectId) {
+final allExpensesProvider = Provider<List<ExpenseModel>>((ref) {
+  final items = ref.watch(expensesProvider);
+  return items.toList()..sort((a, b) => b.date.compareTo(a.date));
+});
+
+final projectExpensesProvider =
+    Provider.family<List<ExpenseModel>, String>((ref, projectId) {
   final items = ref.watch(expensesProvider);
   return items.where((e) => e.projectId == projectId).toList()
     ..sort((a, b) => b.date.compareTo(a.date));
 });
 
+final workspaceExpensesProvider = Provider<List<ExpenseModel>>((ref) {
+  final items = ref.watch(expensesProvider);
+  final userWorkspaceIds = ref.watch(userWorkspaceIdsProvider);
+  final activeId = ref.watch(activeWorkspaceIdProvider);
+  final isGlobalView = ref.watch(globalViewEnabledProvider);
+  final filtered = isGlobalView
+      ? items
+          .where((expense) => userWorkspaceIds.contains(expense.workspaceId))
+          .toList()
+      : activeId == null
+          ? <ExpenseModel>[]
+          : items.where((e) => e.workspaceId == activeId).toList();
+  return filtered..sort((a, b) => b.date.compareTo(a.date));
+});
+
 class ExpenseNotifier extends StateNotifier<List<ExpenseModel>> {
   final Ref _ref;
-  ExpenseNotifier(this._ref) : super([]) { _load(); }
+  ExpenseNotifier(this._ref) : super([]) {
+    _load();
+  }
 
   void _load() {
     final box = Hive.box<ExpenseModel>(AppConstants.expenseBox);

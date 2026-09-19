@@ -10,6 +10,7 @@ import '../../../data/models/note_model.dart';
 import '../../../data/models/project_model.dart';
 import '../../../data/models/task_model.dart';
 import '../../../data/providers/notes_provider.dart';
+import '../../../data/providers/employee_provider.dart';
 import '../../../data/providers/project_provider.dart';
 import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/other_providers.dart';
@@ -24,7 +25,8 @@ class ProjectDetailScreen extends ConsumerStatefulWidget {
   const ProjectDetailScreen({super.key, required this.projectId});
 
   @override
-  ConsumerState<ProjectDetailScreen> createState() => _ProjectDetailScreenState();
+  ConsumerState<ProjectDetailScreen> createState() =>
+      _ProjectDetailScreenState();
 }
 
 class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
@@ -121,6 +123,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
   @override
   Widget build(BuildContext context) {
     final project = ref.watch(projectByIdProvider(widget.projectId));
+    final employees = ref.watch(workspaceEmployeesProvider);
 
     if (project == null) {
       return const Scaffold(body: Center(child: Text('Project not found')));
@@ -140,7 +143,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
             pinned: true,
             backgroundColor: Color(project.colorValue),
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+              icon:
+                  const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
               onPressed: () => context.pop(),
             ),
             actions: [
@@ -172,7 +176,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
                         Row(
                           children: [
                             Text(project.emoji,
-                                style: const TextStyle(fontSize: 36, color: Colors.white)),
+                                style: const TextStyle(
+                                    fontSize: 36, color: Colors.white)),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(project.name,
@@ -194,7 +199,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
                                     size: 12, color: Colors.white70),
                                 const SizedBox(width: 4),
                                 Text(
-                                  DateFormat('dd MMM yyyy').format(project.dueDate!),
+                                  DateFormat('dd MMM yyyy')
+                                      .format(project.dueDate!),
                                   style: AppTextStyles.bodySmall
                                       .copyWith(color: Colors.white70),
                                 ),
@@ -203,7 +209,16 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
                         ),
                         if (project.memberIds.isNotEmpty) ...[
                           const SizedBox(height: 16),
-                          AvatarStack(names: project.memberIds, size: 28),
+                          AvatarStack(
+                            names: project.memberIds.map((id) {
+                              return employees
+                                      .where((employee) => employee.id == id)
+                                      .map((employee) => employee.name)
+                                      .firstOrNull ??
+                                  id;
+                            }).toList(),
+                            size: 28,
+                          ),
                         ],
                         const SizedBox(height: 16),
                         ClipRRect(
@@ -211,7 +226,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
                           child: LinearProgressIndicator(
                             value: project.progress,
                             backgroundColor: Colors.white24,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Colors.white),
                             minHeight: 6,
                           ),
                         ),
@@ -299,20 +315,27 @@ class _TasksTab extends ConsumerWidget {
             child: Row(
               children: [
                 GestureDetector(
-                  onTap: () => ref.read(tasksProvider.notifier).toggleComplete(task.id),
+                  onTap: () =>
+                      ref.read(tasksProvider.notifier).toggleComplete(task.id),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     decoration: BoxDecoration(
-                      color: task.isCompleted ? AppColors.primary : Colors.transparent,
+                      color: task.isCompleted
+                          ? AppColors.primary
+                          : Colors.transparent,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: task.isCompleted ? AppColors.primary : AppColors.border,
+                        color: task.isCompleted
+                            ? AppColors.primary
+                            : AppColors.border,
                         width: 2,
                       ),
                     ),
                     child: task.isCompleted
-                        ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                        ? const Icon(Icons.check_rounded,
+                            color: Colors.white, size: 14)
                         : null,
                   ),
                 ),
@@ -374,6 +397,10 @@ class _FinanceTab extends ConsumerWidget {
     final expense = expenses.where((e) => !e.isIncome).toList();
     final totalIncome = income.fold(0.0, (s, e) => s + e.amount);
     final totalExpense = expense.fold(0.0, (s, e) => s + e.amount);
+    final margin = totalIncome == 0
+        ? 0.0
+        : ((totalIncome - totalExpense) / totalIncome * 100)
+            .clamp(-999.0, 999.0);
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -381,14 +408,20 @@ class _FinanceTab extends ConsumerWidget {
         // Summary cards
         Row(
           children: [
-            Expanded(child: _FinanceSummaryCard(
-              label: 'Total Income', value: totalIncome,
-              color: AppColors.accentGreen, icon: Icons.trending_up_rounded,
+            Expanded(
+                child: _FinanceSummaryCard(
+              label: 'Total Income',
+              value: totalIncome,
+              color: AppColors.accentGreen,
+              icon: Icons.trending_up_rounded,
             )),
             const SizedBox(width: 14),
-            Expanded(child: _FinanceSummaryCard(
-              label: 'Total Expense', value: totalExpense,
-              color: AppColors.accentRed, icon: Icons.trending_down_rounded,
+            Expanded(
+                child: _FinanceSummaryCard(
+              label: 'Total Expense',
+              value: totalExpense,
+              color: AppColors.accentRed,
+              icon: Icons.trending_down_rounded,
             )),
           ],
         ),
@@ -397,8 +430,18 @@ class _FinanceTab extends ConsumerWidget {
           label: 'Net Profit',
           value: totalIncome - totalExpense,
           color: (totalIncome - totalExpense) >= 0
-              ? AppColors.accentGreen : AppColors.accentRed,
+              ? AppColors.accentGreen
+              : AppColors.accentRed,
           icon: Icons.account_balance_rounded,
+          wide: true,
+        ),
+        const SizedBox(height: 14),
+        _FinanceSummaryCard(
+          label: 'Profit Margin',
+          value: margin,
+          suffix: '%',
+          color: margin >= 0 ? AppColors.accentGreen : AppColors.accentRed,
+          icon: Icons.percent_rounded,
           wide: true,
         ),
         const SizedBox(height: 20),
@@ -409,7 +452,8 @@ class _FinanceTab extends ConsumerWidget {
             GestureDetector(
               onTap: onAddTap,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   gradient: AppColors.purpleGradient,
                   borderRadius: BorderRadius.circular(20),
@@ -419,8 +463,11 @@ class _FinanceTab extends ConsumerWidget {
                   children: [
                     Icon(Icons.add_rounded, color: Colors.white, size: 16),
                     SizedBox(width: 4),
-                    Text('Add', style: TextStyle(color: Colors.white,
-                        fontWeight: FontWeight.w600, fontSize: 12)),
+                    Text('Add',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12)),
                   ],
                 ),
               ),
@@ -438,46 +485,55 @@ class _FinanceTab extends ConsumerWidget {
           )
         else
           ...expenses.map((e) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: AnimatedCard(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(
-                      color: (e.isIncome ? AppColors.accentGreen : AppColors.accentRed)
-                          .withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      e.isIncome ? Icons.trending_up_rounded : Icons.trending_down_rounded,
-                      color: e.isIncome ? AppColors.accentGreen : AppColors.accentRed,
-                      size: 20,
-                    ),
+                padding: const EdgeInsets.only(bottom: 10),
+                child: AnimatedCard(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: (e.isIncome
+                                  ? AppColors.accentGreen
+                                  : AppColors.accentRed)
+                              .withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          e.isIncome
+                              ? Icons.trending_up_rounded
+                              : Icons.trending_down_rounded,
+                          color: e.isIncome
+                              ? AppColors.accentGreen
+                              : AppColors.accentRed,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(e.title, style: AppTextStyles.titleMedium),
+                            Text(DateFormat('dd MMM yyyy').format(e.date),
+                                style: AppTextStyles.bodySmall),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '${e.isIncome ? '+' : '-'}₹${e.amount.toStringAsFixed(0)}',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: e.isIncome
+                              ? AppColors.accentGreen
+                              : AppColors.accentRed,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(e.title, style: AppTextStyles.titleMedium),
-                        Text(DateFormat('dd MMM yyyy').format(e.date),
-                            style: AppTextStyles.bodySmall),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    '${e.isIncome ? '+' : '-'}₹${e.amount.toStringAsFixed(0)}',
-                    style: AppTextStyles.titleMedium.copyWith(
-                      color: e.isIncome ? AppColors.accentGreen : AppColors.accentRed,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )),
+                ),
+              )),
       ],
     );
   }
@@ -489,10 +545,15 @@ class _FinanceSummaryCard extends StatelessWidget {
   final Color color;
   final IconData icon;
   final bool wide;
+  final String suffix;
 
   const _FinanceSummaryCard({
-    required this.label, required this.value,
-    required this.color, required this.icon, this.wide = false,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+    this.wide = false,
+    this.suffix = '',
   });
 
   @override
@@ -502,7 +563,8 @@ class _FinanceSummaryCard extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 40, height: 40,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: color.withOpacity(0.12),
               borderRadius: BorderRadius.circular(10),
@@ -514,7 +576,8 @@ class _FinanceSummaryCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(label, style: AppTextStyles.bodySmall),
-              Text('₹${value.toStringAsFixed(0)}',
+              Text(
+                  '${suffix.isEmpty ? '₹' : ''}${value.toStringAsFixed(suffix.isEmpty ? 0 : 1)}$suffix',
                   style: AppTextStyles.headlineSmall.copyWith(color: color)),
             ],
           ),
@@ -557,7 +620,8 @@ class _FollowupsTab extends ConsumerWidget {
             child: Row(
               children: [
                 Container(
-                  width: 40, height: 40,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: _statusColor(f.statusStr).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
@@ -587,19 +651,27 @@ class _FollowupsTab extends ConsumerWidget {
 
   Color _statusColor(String status) {
     switch (status) {
-      case 'done': return AppColors.statusDone;
-      case 'overdue': return AppColors.statusOverdue;
-      default: return AppColors.statusPending;
+      case 'done':
+        return AppColors.statusDone;
+      case 'overdue':
+        return AppColors.statusOverdue;
+      default:
+        return AppColors.statusPending;
     }
   }
 
   IconData _typeIcon(String type) {
     switch (type) {
-      case 'call': return Icons.phone_rounded;
-      case 'email': return Icons.email_rounded;
-      case 'meeting': return Icons.people_rounded;
-      case 'visit': return Icons.location_on_rounded;
-      default: return Icons.track_changes_rounded;
+      case 'call':
+        return Icons.phone_rounded;
+      case 'email':
+        return Icons.email_rounded;
+      case 'meeting':
+        return Icons.people_rounded;
+      case 'visit':
+        return Icons.location_on_rounded;
+      default:
+        return Icons.track_changes_rounded;
     }
   }
 }
@@ -653,13 +725,14 @@ class _NotesTab extends ConsumerWidget {
                   const SizedBox(height: 6),
                   Text(note.content,
                       style: AppTextStyles.bodyMedium,
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
                 ],
                 const SizedBox(height: 10),
                 Text(
                   DateFormat('dd MMM yyyy').format(note.createdAt),
-                  style: AppTextStyles.labelSmall.copyWith(
-                      color: AppColors.textSecondary),
+                  style: AppTextStyles.labelSmall
+                      .copyWith(color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -676,7 +749,8 @@ class _AddProjectTaskSheet extends StatefulWidget {
   final String projectId;
   final WidgetRef parentRef;
 
-  const _AddProjectTaskSheet({required this.projectId, required this.parentRef});
+  const _AddProjectTaskSheet(
+      {required this.projectId, required this.parentRef});
 
   @override
   State<_AddProjectTaskSheet> createState() => _AddProjectTaskSheetState();
@@ -690,16 +764,21 @@ class _AddProjectTaskSheetState extends State<_AddProjectTaskSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('New Task', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 16),
@@ -707,12 +786,14 @@ class _AddProjectTaskSheetState extends State<_AddProjectTaskSheet> {
               controller: _titleController,
               decoration: const InputDecoration(
                 hintText: 'Task Title',
-                prefixIcon: Icon(Icons.task_alt_rounded, color: AppColors.primary),
+                prefixIcon:
+                    Icon(Icons.task_alt_rounded, color: AppColors.primary),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _descController, maxLines: 2,
+              controller: _descController,
+              maxLines: 2,
               decoration: const InputDecoration(
                 hintText: 'Description (optional)',
                 prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary),
@@ -722,9 +803,11 @@ class _AddProjectTaskSheetState extends State<_AddProjectTaskSheet> {
             Row(
               children: ['low', 'medium', 'high'].map((p) {
                 final isSelected = _priority == p;
-                final color = p == 'high' ? AppColors.accentRed
-                    : p == 'medium' ? AppColors.accentOrange
-                    : AppColors.accentGreen;
+                final color = p == 'high'
+                    ? AppColors.accentRed
+                    : p == 'medium'
+                        ? AppColors.accentOrange
+                        : AppColors.accentGreen;
                 return Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -734,14 +817,21 @@ class _AddProjectTaskSheetState extends State<_AddProjectTaskSheet> {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(
-                          color: isSelected ? color.withOpacity(0.12) : AppColors.surfaceVariant,
-                          border: isSelected ? Border.all(color: color, width: 2) : null,
+                          color: isSelected
+                              ? color.withOpacity(0.12)
+                              : AppColors.surfaceVariant,
+                          border: isSelected
+                              ? Border.all(color: color, width: 2)
+                              : null,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Center(child: Text(p.toUpperCase(),
-                            style: AppTextStyles.labelMedium.copyWith(
-                                color: isSelected ? color : AppColors.textSecondary,
-                                fontWeight: FontWeight.w700))),
+                        child: Center(
+                            child: Text(p.toUpperCase(),
+                                style: AppTextStyles.labelMedium.copyWith(
+                                    color: isSelected
+                                        ? color
+                                        : AppColors.textSecondary,
+                                    fontWeight: FontWeight.w700))),
                       ),
                     ),
                   ),
@@ -749,20 +839,23 @@ class _AddProjectTaskSheetState extends State<_AddProjectTaskSheet> {
               }).toList(),
             ),
             const SizedBox(height: 24),
-            GradientButton(label: 'Create Task', onTap: () {
-              if (_titleController.text.trim().isEmpty) return;
-              final workspaceId = widget.parentRef.read(activeWorkspaceIdProvider);
-              if (workspaceId == null) return;
-              final task = TaskModel.create(
-                workspaceId: workspaceId,
-                projectId: widget.projectId,
-                title: _titleController.text.trim(),
-                description: _descController.text.trim(),
-                priority: _priority,
-              );
-              widget.parentRef.read(tasksProvider.notifier).addTask(task);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Create Task',
+                onTap: () {
+                  if (_titleController.text.trim().isEmpty) return;
+                  final workspaceId =
+                      widget.parentRef.read(activeWorkspaceIdProvider);
+                  if (workspaceId == null) return;
+                  final task = TaskModel.create(
+                    workspaceId: workspaceId,
+                    projectId: widget.projectId,
+                    title: _titleController.text.trim(),
+                    description: _descController.text.trim(),
+                    priority: _priority,
+                  );
+                  widget.parentRef.read(tasksProvider.notifier).addTask(task);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
         ),
@@ -791,22 +884,28 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('Add Transaction', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: GestureDetector(
+                Expanded(
+                    child: GestureDetector(
                   onTap: () => setState(() => _type = 'income'),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
@@ -820,13 +919,17 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
                           : null,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Center(child: Text('Income',
-                        style: AppTextStyles.titleMedium.copyWith(
-                            color: _type == 'income' ? AppColors.accentGreen : AppColors.textSecondary))),
+                    child: Center(
+                        child: Text('Income',
+                            style: AppTextStyles.titleMedium.copyWith(
+                                color: _type == 'income'
+                                    ? AppColors.accentGreen
+                                    : AppColors.textSecondary))),
                   ),
                 )),
                 const SizedBox(width: 12),
-                Expanded(child: GestureDetector(
+                Expanded(
+                    child: GestureDetector(
                   onTap: () => setState(() => _type = 'expense'),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
@@ -840,36 +943,49 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
                           : null,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Center(child: Text('Expense',
-                        style: AppTextStyles.titleMedium.copyWith(
-                            color: _type == 'expense' ? AppColors.accentRed : AppColors.textSecondary))),
+                    child: Center(
+                        child: Text('Expense',
+                            style: AppTextStyles.titleMedium.copyWith(
+                                color: _type == 'expense'
+                                    ? AppColors.accentRed
+                                    : AppColors.textSecondary))),
                   ),
                 )),
               ],
             ),
             const SizedBox(height: 14),
-            TextField(controller: _titleController,
-                decoration: const InputDecoration(hintText: 'Title',
-                    prefixIcon: Icon(Icons.label_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                    hintText: 'Title',
+                    prefixIcon:
+                        Icon(Icons.label_rounded, color: AppColors.primary))),
             const SizedBox(height: 12),
-            TextField(controller: _amountController, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(hintText: 'Amount (₹)',
-                    prefixIcon: Icon(Icons.currency_rupee_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _amountController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    hintText: 'Amount (₹)',
+                    prefixIcon: Icon(Icons.currency_rupee_rounded,
+                        color: AppColors.primary))),
             const SizedBox(height: 24),
-            GradientButton(label: 'Add Transaction', onTap: () {
-              if (_titleController.text.trim().isEmpty) return;
-              final amount = double.tryParse(_amountController.text) ?? 0;
-              final workspaceId = widget.ref.read(activeWorkspaceIdProvider) ?? '';
-              final expense = ExpenseModel.create(
-                workspaceId: workspaceId,
-                projectId: widget.projectId,
-                title: _titleController.text.trim(),
-                amount: amount,
-                type: _type,
-              );
-              widget.ref.read(expensesProvider.notifier).add(expense);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Add Transaction',
+                onTap: () {
+                  if (_titleController.text.trim().isEmpty) return;
+                  final amount = double.tryParse(_amountController.text) ?? 0;
+                  final workspaceId =
+                      widget.ref.read(activeWorkspaceIdProvider) ?? '';
+                  final expense = ExpenseModel.create(
+                    workspaceId: workspaceId,
+                    projectId: widget.projectId,
+                    title: _titleController.text.trim(),
+                    amount: amount,
+                    type: _type,
+                  );
+                  widget.ref.read(expensesProvider.notifier).add(expense);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
         ),
@@ -899,16 +1015,21 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('Add Follow-up', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 16),
@@ -918,13 +1039,20 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  for (final t in ['call', 'email', 'meeting', 'visit', 'message'])
+                  for (final t in [
+                    'call',
+                    'email',
+                    'meeting',
+                    'visit',
+                    'message'
+                  ])
                     GestureDetector(
                       onTap: () => setState(() => _type = t),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
                           color: _type == t
                               ? AppColors.primary.withOpacity(0.12)
@@ -936,7 +1064,9 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
                         ),
                         child: Text(t[0].toUpperCase() + t.substring(1),
                             style: AppTextStyles.labelMedium.copyWith(
-                                color: _type == t ? AppColors.primary : AppColors.textSecondary,
+                                color: _type == t
+                                    ? AppColors.primary
+                                    : AppColors.textSecondary,
                                 fontWeight: FontWeight.w600)),
                       ),
                     ),
@@ -948,12 +1078,14 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
               controller: _titleController,
               decoration: const InputDecoration(
                 hintText: 'Follow-up Title',
-                prefixIcon: Icon(Icons.track_changes_rounded, color: AppColors.primary),
+                prefixIcon:
+                    Icon(Icons.track_changes_rounded, color: AppColors.primary),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _descController, maxLines: 2,
+              controller: _descController,
+              maxLines: 2,
               decoration: const InputDecoration(
                 hintText: 'Description (optional)',
                 prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary),
@@ -986,21 +1118,26 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
               ),
             ),
             const SizedBox(height: 24),
-            GradientButton(label: 'Add Follow-up', onTap: () {
-              if (_titleController.text.trim().isEmpty) return;
-              final workspaceId = widget.parentRef.read(activeWorkspaceIdProvider);
-              if (workspaceId == null) return;
-              final followup = FollowupModel.create(
-                workspaceId: workspaceId,
-                projectId: widget.projectId,
-                title: _titleController.text.trim(),
-                description: _descController.text.trim(),
-                dueDate: _dueDate,
-                type: _type,
-              );
-              widget.parentRef.read(followupsProvider.notifier).add(followup);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Add Follow-up',
+                onTap: () {
+                  if (_titleController.text.trim().isEmpty) return;
+                  final workspaceId =
+                      widget.parentRef.read(activeWorkspaceIdProvider);
+                  if (workspaceId == null) return;
+                  final followup = FollowupModel.create(
+                    workspaceId: workspaceId,
+                    projectId: widget.projectId,
+                    title: _titleController.text.trim(),
+                    description: _descController.text.trim(),
+                    dueDate: _dueDate,
+                    type: _type,
+                  );
+                  widget.parentRef
+                      .read(followupsProvider.notifier)
+                      .add(followup);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
         ),
@@ -1015,7 +1152,8 @@ class _AddProjectNoteSheet extends StatefulWidget {
   final String projectId;
   final WidgetRef parentRef;
 
-  const _AddProjectNoteSheet({required this.projectId, required this.parentRef});
+  const _AddProjectNoteSheet(
+      {required this.projectId, required this.parentRef});
 
   @override
   State<_AddProjectNoteSheet> createState() => _AddProjectNoteSheetState();
@@ -1027,28 +1165,38 @@ class _AddProjectNoteSheetState extends State<_AddProjectNoteSheet> {
   int _colorIndex = 0;
 
   final List<Color> _colors = [
-    AppColors.cardPurple, AppColors.cardBlue, AppColors.cardOrange,
-    AppColors.cardPink, AppColors.cardGreen, AppColors.cardTeal,
+    AppColors.cardPurple,
+    AppColors.cardBlue,
+    AppColors.cardOrange,
+    AppColors.cardPink,
+    AppColors.cardGreen,
+    AppColors.cardTeal,
   ];
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('New Note', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 14),
             // Color picker
-            Row(children: _colors.asMap().entries.map((entry) {
+            Row(
+                children: _colors.asMap().entries.map((entry) {
               final i = entry.key;
               final c = entry.value;
               return GestureDetector(
@@ -1056,9 +1204,11 @@ class _AddProjectNoteSheetState extends State<_AddProjectNoteSheet> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   margin: const EdgeInsets.only(right: 8),
-                  width: 28, height: 28,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
-                    color: c, shape: BoxShape.circle,
+                    color: c,
+                    shape: BoxShape.circle,
                     border: _colorIndex == i
                         ? Border.all(color: AppColors.primary, width: 2.5)
                         : null,
@@ -1076,27 +1226,31 @@ class _AddProjectNoteSheetState extends State<_AddProjectNoteSheet> {
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _contentController, maxLines: 4,
+              controller: _contentController,
+              maxLines: 4,
               decoration: const InputDecoration(
                 hintText: 'Write your note...',
                 prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary),
               ),
             ),
             const SizedBox(height: 24),
-            GradientButton(label: 'Save Note', onTap: () {
-              if (_titleController.text.trim().isEmpty) return;
-              final workspaceId = widget.parentRef.read(activeWorkspaceIdProvider);
-              if (workspaceId == null) return;
-              final note = NoteModel.create(
-                workspaceId: workspaceId,
-                projectId: widget.projectId,
-                title: _titleController.text.trim(),
-                content: _contentController.text.trim(),
-                colorValue: _colors[_colorIndex].value,
-              );
-              widget.parentRef.read(notesProvider.notifier).addNote(note);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Save Note',
+                onTap: () {
+                  if (_titleController.text.trim().isEmpty) return;
+                  final workspaceId =
+                      widget.parentRef.read(activeWorkspaceIdProvider);
+                  if (workspaceId == null) return;
+                  final note = NoteModel.create(
+                    workspaceId: workspaceId,
+                    projectId: widget.projectId,
+                    title: _titleController.text.trim(),
+                    content: _contentController.text.trim(),
+                    colorValue: _colors[_colorIndex].value,
+                  );
+                  widget.parentRef.read(notesProvider.notifier).addNote(note);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
         ),
@@ -1124,8 +1278,20 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
   late DateTime? _dueDate;
   late String _selectedEmoji;
   late int _selectedColorIndex;
+  late Set<String> _selectedMemberIds;
 
-  final List<String> _emojis = ['📁', '🏗️', '💼', '🚀', '🎯', '⚡', '🔧', '🌟', '🔥', '✅'];
+  final List<String> _emojis = [
+    '📁',
+    '🏗️',
+    '💼',
+    '🚀',
+    '🎯',
+    '⚡',
+    '🔧',
+    '🌟',
+    '🔥',
+    '✅'
+  ];
   final List<String> _statuses = ['active', 'paused', 'completed', 'cancelled'];
   final List<String> _priorities = ['low', 'medium', 'high', 'critical'];
 
@@ -1151,6 +1317,7 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
     _priority = widget.project.priorityStr;
     _dueDate = widget.project.dueDate;
     _selectedEmoji = widget.project.emoji;
+    _selectedMemberIds = {...widget.project.memberIds};
     // Find nearest color index
     _selectedColorIndex = AppColors.workspaceColors.indexWhere(
       (c) => c.value == widget.project.colorValue,
@@ -1177,7 +1344,7 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
       dueDate: _dueDate,
       createdAt: widget.project.createdAt,
       updatedAt: DateTime.now(),
-      memberIds: widget.project.memberIds,
+      memberIds: _selectedMemberIds.toList(),
       budget: widget.project.budget,
       totalIncome: widget.project.totalIncome,
       totalExpense: widget.project.totalExpense,
@@ -1223,8 +1390,11 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final employees = widget.parentRef.watch(workspaceEmployeesProvider);
+
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
@@ -1232,9 +1402,13 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(child: Container(width: 40, height: 4,
-                  decoration: BoxDecoration(color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2)))),
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 20),
 
               // Header
@@ -1264,7 +1438,8 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.folder_rounded, color: AppColors.primary),
+                  prefixIcon:
+                      Icon(Icons.folder_rounded, color: AppColors.primary),
                   hintText: 'Project name',
                 ),
               ),
@@ -1283,7 +1458,8 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.only(right: 8),
-                      width: 44, height: 44,
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
                         color: _selectedEmoji == _emojis[i]
                             ? AppColors.primary.withOpacity(0.12)
@@ -1293,8 +1469,9 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                             : null,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Center(child: Text(_emojis[i],
-                          style: const TextStyle(fontSize: 22))),
+                      child: Center(
+                          child: Text(_emojis[i],
+                              style: const TextStyle(fontSize: 22))),
                     ),
                   ),
                 ),
@@ -1313,11 +1490,14 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                       onTap: () => setState(() => _selectedColorIndex = i),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 30, height: 30,
+                        width: 30,
+                        height: 30,
                         decoration: BoxDecoration(
-                          color: c, shape: BoxShape.circle,
+                          color: c,
+                          shape: BoxShape.circle,
                           border: _selectedColorIndex == i
-                              ? Border.all(color: AppColors.textPrimary, width: 3)
+                              ? Border.all(
+                                  color: AppColors.textPrimary, width: 3)
                               : null,
                         ),
                         child: _selectedColorIndex == i
@@ -1335,7 +1515,8 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
               Text('Status', style: AppTextStyles.labelLarge),
               const SizedBox(height: 8),
               Wrap(
-                spacing: 8, runSpacing: 8,
+                spacing: 8,
+                runSpacing: 8,
                 children: _statuses.map((s) {
                   final isSelected = _status == s;
                   final color = _statusColors[s] ?? AppColors.primary;
@@ -1343,23 +1524,30 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                     onTap: () => setState(() => _status = s),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isSelected ? color.withOpacity(0.12) : AppColors.surfaceVariant,
-                        border: isSelected ? Border.all(color: color, width: 2) : null,
+                        color: isSelected
+                            ? color.withOpacity(0.12)
+                            : AppColors.surfaceVariant,
+                        border: isSelected
+                            ? Border.all(color: color, width: 2)
+                            : null,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (isSelected) ...[
-                            Icon(Icons.check_circle_rounded, color: color, size: 14),
+                            Icon(Icons.check_circle_rounded,
+                                color: color, size: 14),
                             const SizedBox(width: 4),
                           ],
                           Text(
                             s[0].toUpperCase() + s.substring(1),
                             style: AppTextStyles.labelMedium.copyWith(
-                              color: isSelected ? color : AppColors.textSecondary,
+                              color:
+                                  isSelected ? color : AppColors.textSecondary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -1387,15 +1575,21 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           decoration: BoxDecoration(
-                            color: isSelected ? color.withOpacity(0.12) : AppColors.surfaceVariant,
-                            border: isSelected ? Border.all(color: color, width: 2) : null,
+                            color: isSelected
+                                ? color.withOpacity(0.12)
+                                : AppColors.surfaceVariant,
+                            border: isSelected
+                                ? Border.all(color: color, width: 2)
+                                : null,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Center(
                             child: Text(
                               p[0].toUpperCase() + p.substring(1),
                               style: AppTextStyles.labelSmall.copyWith(
-                                color: isSelected ? color : AppColors.textSecondary,
+                                color: isSelected
+                                    ? color
+                                    : AppColors.textSecondary,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -1415,7 +1609,8 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 7)),
+                    initialDate:
+                        _dueDate ?? DateTime.now().add(const Duration(days: 7)),
                     firstDate: DateTime(2020),
                     lastDate: DateTime(2030),
                   );
@@ -1438,7 +1633,8 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                             : 'No due date set',
                         style: AppTextStyles.titleMedium.copyWith(
                           color: _dueDate != null
-                              ? AppColors.textPrimary : AppColors.textSecondary,
+                              ? AppColors.textPrimary
+                              : AppColors.textSecondary,
                         ),
                       ),
                       const Spacer(),
@@ -1453,6 +1649,29 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
                 ),
               ),
               const SizedBox(height: 28),
+
+              Text('Team Members', style: AppTextStyles.labelLarge),
+              const SizedBox(height: 8),
+              if (employees.isEmpty)
+                Text('No team members available in this workspace.',
+                    style: AppTextStyles.bodySmall)
+              else
+                ...employees.map((employee) => CheckboxListTile(
+                      value: _selectedMemberIds.contains(employee.id),
+                      onChanged: (selected) => setState(() {
+                        if (selected == true) {
+                          _selectedMemberIds.add(employee.id);
+                        } else {
+                          _selectedMemberIds.remove(employee.id);
+                        }
+                      }),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(employee.name),
+                      subtitle: Text(employee.roleStr),
+                      activeColor: AppColors.primary,
+                    )),
+              const SizedBox(height: 20),
 
               // Save button
               GradientButton(

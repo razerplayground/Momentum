@@ -4,13 +4,22 @@ import '../models/employee_model.dart';
 import '../../core/constants/app_constants.dart';
 import 'workspace_provider.dart';
 
-final employeesProvider = StateNotifierProvider<EmployeeNotifier, List<EmployeeModel>>((ref) {
+final employeesProvider =
+    StateNotifierProvider<EmployeeNotifier, List<EmployeeModel>>((ref) {
   return EmployeeNotifier(ref);
 });
 
 final workspaceEmployeesProvider = Provider<List<EmployeeModel>>((ref) {
   final employees = ref.watch(employeesProvider);
+  final userWorkspaceIds = ref.watch(userWorkspaceIdsProvider);
   final activeId = ref.watch(activeWorkspaceIdProvider);
+  final isGlobalView = ref.watch(globalViewEnabledProvider);
+  if (isGlobalView) {
+    return employees
+        .where((employee) => userWorkspaceIds.contains(employee.workspaceId))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
   if (activeId == null) return [];
   return employees.where((e) => e.workspaceId == activeId).toList()
     ..sort((a, b) => a.name.compareTo(b.name));

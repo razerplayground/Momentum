@@ -38,6 +38,7 @@ void main() async {
   Hive.registerAdapter(WorkspaceModelAdapter());
   Hive.registerAdapter(ProjectModelAdapter());
   Hive.registerAdapter(TaskModelAdapter());
+  Hive.registerAdapter(SubtaskModelAdapter());
   Hive.registerAdapter(NoteModelAdapter());
   Hive.registerAdapter(AppointmentModelAdapter());
   Hive.registerAdapter(TodoModelAdapter());
@@ -74,7 +75,8 @@ class BizProApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
         return MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+          data:
+              MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
           child: child!,
         );
       },

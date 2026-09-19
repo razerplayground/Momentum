@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../auth/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/models/note_model.dart';
 import '../../../data/models/task_model.dart';
+import '../../../data/models/project_model.dart';
+import '../../../data/models/expense_model.dart';
 import '../../../data/providers/notes_provider.dart';
 import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
 import '../../../data/providers/project_provider.dart';
 import '../../../data/providers/employee_provider.dart';
+import '../../../data/providers/other_providers.dart';
 import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/priority_chip.dart';
+
+final _dashboardScaffoldKey = GlobalKey<ScaffoldState>();
 
 class DashboardScreen extends ConsumerWidget {
   /// Callback to switch the bottom-nav tab from within the dashboard.
@@ -24,20 +30,66 @@ class DashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspace = ref.watch(activeWorkspaceProvider);
+    final isGlobalView = ref.watch(globalViewEnabledProvider);
     final projects = ref.watch(workspaceProjectsProvider);
     final tasks = ref.watch(workspaceTasksProvider);
     final todayTasks = ref.watch(todayTasksProvider);
     final employees = ref.watch(workspaceEmployeesProvider);
+    final expenses = ref.watch(workspaceExpensesProvider);
+    final appointments = ref.watch(workspaceAppointmentsProvider);
+    final notes = ref.watch(workspaceNotesProvider);
 
-    if (workspace == null) {
+    if (workspace == null && !isGlobalView) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    final activeProjects = projects.where((p) => p.statusStr == 'active').toList();
+    final workspaceColorValue =
+        workspace?.colorValue ?? AppColors.primary.value;
+    final workspaceName = workspace?.name ?? 'All Workspaces';
+
+    final activeProjects =
+        projects.where((p) => p.statusStr == 'active').toList();
     final completedTasks = tasks.where((t) => t.isCompleted).length;
     final now = DateTime.now();
+    final openTasks = tasks.where((t) => !t.isCompleted).length;
+    final outgoing = expenses
+        .where((expense) => !expense.isIncome)
+        .fold(0.0, (total, expense) => total + expense.amount);
+    final upcomingAppointments = appointments
+        .where((appointment) =>
+            appointment.startTime.year == now.year &&
+            appointment.startTime.month == now.month &&
+            appointment.startTime.day == now.day)
+        .toList()
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    final recentTasks = tasks.map((task) => _DashboardActivity(
+          title: task.title,
+          subtitle: task.isCompleted ? 'Task completed' : 'Task updated',
+          time: task.updatedAt,
+          icon: Icons.task_alt_rounded,
+          color: AppColors.accentBlue,
+          onTap: () => context.go('/home/tasks/${task.id}'),
+        ));
+    final recentProjects = projects.map((project) => _DashboardActivity(
+          title: 'Updated Project: ${project.name}',
+          subtitle: 'Project updated',
+          time: project.updatedAt,
+          icon: Icons.folder_rounded,
+          color: AppColors.primary,
+          onTap: () => context.go('/home/projects/${project.id}'),
+        ));
+    final recentNotes = notes.map((note) => _DashboardActivity(
+          title: note.title,
+          subtitle: 'Note updated',
+          time: note.updatedAt,
+          icon: Icons.sticky_note_2_rounded,
+          color: AppColors.accentOrange,
+          onTap: () => context.go('/home/notes/${note.id}'),
+        ));
+    final recentActivity = [...recentTasks, ...recentProjects, ...recentNotes]
+      ..sort((a, b) => b.time.compareTo(a.time));
     final greeting = now.hour < 12
         ? 'Good Morning'
         : now.hour < 17
@@ -45,7 +97,9 @@ class DashboardScreen extends ConsumerWidget {
             : 'Good Evening';
 
     return Scaffold(
+      key: _dashboardScaffoldKey,
       backgroundColor: AppColors.background,
+      endDrawer: _buildAccountDrawer(context),
       body: CustomScrollView(
         slivers: [
           // ─── App Bar ──────────────────────────────────────────────
@@ -59,15 +113,17 @@ class DashboardScreen extends ConsumerWidget {
                     Row(
                       children: [
                         GestureDetector(
-                          onTap: () => context.go('/workspaces'),
+                          onTap: () => _dashboardScaffoldKey.currentState
+                              ?.openEndDrawer(),
                           child: Container(
-                            width: 44, height: 44,
+                            width: 44,
+                            height: 44,
                             decoration: BoxDecoration(
-                              color: Color(workspace.colorValue),
+                              color: Color(workspaceColorValue),
                               shape: BoxShape.circle,
                             ),
                             child: Center(
-                              child: Text(workspace.emoji,
+                              child: Text(workspace?.emoji ?? '🌐',
                                   style: const TextStyle(fontSize: 22)),
                             ),
                           ),
@@ -77,8 +133,12 @@ class DashboardScreen extends ConsumerWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('$greeting 👋', style: AppTextStyles.bodySmall),
-                              Text(workspace.name, style: AppTextStyles.titleLarge),
+                              Text('$greeting 👋',
+                                  style: AppTextStyles.bodySmall),
+                              Text(
+                                workspaceName,
+                                style: AppTextStyles.titleLarge,
+                              ),
                             ],
                           ),
                         ),
@@ -89,12 +149,32 @@ class DashboardScreen extends ConsumerWidget {
                         const SizedBox(width: 8),
                         _IconButton(
                           icon: Icons.notifications_none_rounded,
-                          onTap: () => _showNotificationsSheet(context, todayTasks),
+                          onTap: () =>
+                              _showNotificationsSheet(context, todayTasks),
                           badge: todayTasks.isNotEmpty,
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
+                    if (isGlobalView)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              AppColors.primary.withAlpha((0.12 * 255).round()),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          'Global View',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     Text(
                       DateFormat('EEEE, MMMM d, yyyy').format(now),
                       style: AppTextStyles.bodySmall,
@@ -109,28 +189,39 @@ class DashboardScreen extends ConsumerWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _QuickActionCard(
-                      label: 'Create\nNew Note',
-                      icon: Icons.sticky_note_2_rounded,
-                      gradient: AppColors.purpleGradient,
-                      // Opens an inline add-note sheet right from the dashboard
-                      onTap: () => _showAddNoteSheet(context, ref),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _QuickActionCard(
-                      label: 'Create\nNew Task',
-                      icon: Icons.task_alt_rounded,
-                      gradient: AppColors.goldenGradient,
-                      // Opens an inline add-task sheet right from the dashboard
-                      onTap: () => _showAddTaskSheet(context, ref),
-                    ),
-                  ),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.maxWidth >= 700 ? 3 : 2;
+                  return GridView.count(
+                    crossAxisCount: columns,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 14,
+                    childAspectRatio: columns == 3 ? 1.35 : 1.55,
+                    children: [
+                      _QuickActionCard(
+                        label: '+ Quick Note',
+                        icon: Icons.sticky_note_2_rounded,
+                        gradient: AppColors.purpleGradient,
+                        onTap: () => _showAddNoteSheet(context, ref),
+                      ),
+                      _QuickActionCard(
+                        label: '+ Add Expense',
+                        icon: Icons.account_balance_wallet_rounded,
+                        gradient: AppColors.blueGradient,
+                        onTap: () =>
+                            _showAddExpenseSheet(context, ref, projects),
+                      ),
+                      _QuickActionCard(
+                        label: '+ New Task',
+                        icon: Icons.task_alt_rounded,
+                        gradient: AppColors.goldenGradient,
+                        onTap: () => _showAddTaskSheet(context, ref),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -202,6 +293,63 @@ class DashboardScreen extends ConsumerWidget {
             ),
           ),
 
+          // ─── Metric Stat Cards ──────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('At a Glance', style: AppTextStyles.titleLarge),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 700 ? 4 : 2;
+                      return GridView.count(
+                        crossAxisCount: columns,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: columns == 4 ? 1.25 : 1.65,
+                        children: [
+                          _MetricStatCard(
+                            label: 'Active Projects',
+                            value: '${activeProjects.length}',
+                            icon: Icons.folder_open_rounded,
+                            color: AppColors.primary,
+                            onTap: () => onTabSwitch(1),
+                          ),
+                          _MetricStatCard(
+                            label: 'Pending Tasks',
+                            value: '$openTasks',
+                            icon: Icons.pending_actions_rounded,
+                            color: AppColors.accentBlue,
+                            onTap: () => onTabSwitch(2),
+                          ),
+                          _MetricStatCard(
+                            label: 'Team Members',
+                            value: '${employees.length}',
+                            icon: Icons.people_alt_rounded,
+                            color: AppColors.accentGreen,
+                            onTap: () => context.go('/home/employees'),
+                          ),
+                          _MetricStatCard(
+                            label: 'Total Expenses',
+                            value: '₹${outgoing.toStringAsFixed(2)}',
+                            icon: Icons.account_balance_wallet_rounded,
+                            color: AppColors.accentOrange,
+                            onTap: () => onTabSwitch(1),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // ─── Quick Access (all wired) ────────────────────────────
           SliverToBoxAdapter(
             child: Padding(
@@ -209,7 +357,7 @@ class DashboardScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Quick Access', style: AppTextStyles.titleLarge),
+                  Text('Quick Actions', style: AppTextStyles.titleLarge),
                   const SizedBox(height: 14),
                   GridView.count(
                     crossAxisCount: 4,
@@ -273,7 +421,8 @@ class DashboardScreen extends ConsumerWidget {
                         label: 'Settings',
                         color: AppColors.textSecondary,
                         bg: AppColors.surfaceVariant,
-                        onTap: () => _showWorkspaceSettings(context, workspace, ref),
+                        onTap: () =>
+                            _showWorkspaceSettings(context, workspace, ref),
                       ),
                     ],
                   ),
@@ -303,7 +452,8 @@ class DashboardScreen extends ConsumerWidget {
                   child: _ProjectCard(
                     project: activeProjects[i],
                     // Tapping a project card navigates to its detail screen
-                    onTap: () => context.go('/home/projects/${activeProjects[i].id}'),
+                    onTap: () =>
+                        context.go('/home/projects/${activeProjects[i].id}'),
                   ),
                 ),
                 childCount: activeProjects.take(3).length,
@@ -334,11 +484,61 @@ class DashboardScreen extends ConsumerWidget {
                     onToggle: () => ref
                         .read(tasksProvider.notifier)
                         .toggleComplete(todayTasks[i].id),
-                    onTap: () =>
-                        context.go('/home/tasks/${todayTasks[i].id}'),
+                    onTap: () => context.go('/home/tasks/${todayTasks[i].id}'),
                   ),
                 ),
                 childCount: todayTasks.take(3).length,
+              ),
+            ),
+          ],
+
+          // ─── Upcoming Schedule ──────────────────────────────────
+          if (upcomingAppointments.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                child: SectionHeader(
+                  title: "Today's Schedule",
+                  subtitle: '${upcomingAppointments.length} next events',
+                  actionLabel: 'Calendar',
+                  onAction: () => onTabSwitch(4),
+                ),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                  child: _ScheduleTile(
+                    appointment: upcomingAppointments[i],
+                    onTap: () => onTabSwitch(4),
+                  ),
+                ),
+                childCount: upcomingAppointments.length,
+              ),
+            ),
+          ],
+
+          // ─── Recent Activity ────────────────────────────────────
+          if (recentActivity.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                child: SectionHeader(
+                  title: 'Recent Activity',
+                  subtitle: 'Latest updates',
+                  actionLabel: 'Tasks',
+                  onAction: () => onTabSwitch(2),
+                ),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                  child: _ActivityTile(activity: recentActivity[i]),
+                ),
+                childCount: recentActivity.take(5).length,
               ),
             ),
           ],
@@ -367,6 +567,25 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
+  void _showAddExpenseSheet(
+      BuildContext context, WidgetRef ref, List<ProjectModel> projects) {
+    if (projects.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Create a project before adding an expense.')),
+      );
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _DashboardAddExpenseSheet(
+        parentRef: ref,
+        projects: projects,
+      ),
+    );
+  }
+
   void _showSearchSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -375,7 +594,8 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  void _showNotificationsSheet(BuildContext context, List<TaskModel> todayTasks) {
+  void _showNotificationsSheet(
+      BuildContext context, List<TaskModel> todayTasks) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -383,11 +603,81 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  void _showWorkspaceSettings(BuildContext context, dynamic workspace, WidgetRef ref) {
+  void _showWorkspaceSettings(
+      BuildContext context, dynamic workspace, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _WorkspaceSettingsSheet(workspace: workspace, parentRef: ref),
+      builder: (_) =>
+          _WorkspaceSettingsSheet(workspace: workspace, parentRef: ref),
+    );
+  }
+
+  Widget _buildAccountDrawer(BuildContext context) {
+    return Drawer(
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              IconButton(
+                tooltip: 'Close menu',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded),
+              ),
+              const SizedBox(height: 16),
+              Text('BizPro Manager', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 8),
+              Text(
+                AuthService.getSessionEmail(),
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const Spacer(),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.go('/workspaces');
+                  },
+                  icon: const Icon(Icons.swap_horiz_rounded),
+                  label: const Text('Change workspace'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await AuthService.logout();
+                    if (!context.mounted) {
+                      return;
+                    }
+                    Navigator.pop(context);
+                    context.go('/login');
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Log out'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.accentRed,
+                    side: BorderSide(
+                      color: AppColors.accentRed.withValues(alpha: 0.35),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -400,7 +690,9 @@ class _IconButton extends StatelessWidget {
   final bool badge;
 
   const _IconButton({
-    required this.icon, required this.onTap, this.badge = false,
+    required this.icon,
+    required this.onTap,
+    this.badge = false,
   });
 
   @override
@@ -410,7 +702,8 @@ class _IconButton extends StatelessWidget {
       child: Stack(
         children: [
           Container(
-            width: 40, height: 40,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: AppColors.surface,
               shape: BoxShape.circle,
@@ -426,9 +719,11 @@ class _IconButton extends StatelessWidget {
           ),
           if (badge)
             Positioned(
-              right: 2, top: 2,
+              right: 2,
+              top: 2,
               child: Container(
-                width: 10, height: 10,
+                width: 10,
+                height: 10,
                 decoration: const BoxDecoration(
                   color: AppColors.accentRed,
                   shape: BoxShape.circle,
@@ -450,8 +745,10 @@ class _QuickActionCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuickActionCard({
-    required this.label, required this.icon,
-    required this.gradient, required this.onTap,
+    required this.label,
+    required this.icon,
+    required this.gradient,
+    required this.onTap,
   });
 
   @override
@@ -467,7 +764,8 @@ class _QuickActionCard extends StatelessWidget {
         child: Stack(
           children: [
             Positioned(
-              right: -10, bottom: -10,
+              right: -10,
+              bottom: -10,
               child: Icon(Icons.auto_awesome_rounded,
                   size: 70, color: Colors.white.withOpacity(0.15)),
             ),
@@ -477,7 +775,8 @@ class _QuickActionCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 28, height: 28,
+                    width: 28,
+                    height: 28,
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(8),
@@ -508,8 +807,11 @@ class _StatItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _StatItem({
-    required this.value, required this.label,
-    required this.color, required this.icon, required this.onTap,
+    required this.value,
+    required this.label,
+    required this.color,
+    required this.icon,
+    required this.onTap,
   });
 
   @override
@@ -520,7 +822,8 @@ class _StatItem extends StatelessWidget {
         child: Column(
           children: [
             Container(
-              width: 40, height: 40,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: color.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(10),
@@ -538,6 +841,187 @@ class _StatItem extends StatelessWidget {
   }
 }
 
+class _MetricStatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _MetricStatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedCard(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(value,
+                      style: AppTextStyles.titleLarge.copyWith(color: color)),
+                  const SizedBox(height: 2),
+                  Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.labelSmall),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardActivity {
+  final String title;
+  final String subtitle;
+  final DateTime time;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _DashboardActivity({
+    required this.title,
+    required this.subtitle,
+    required this.time,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+}
+
+class _ActivityTile extends StatelessWidget {
+  final _DashboardActivity activity;
+
+  const _ActivityTile({required this.activity});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedCard(
+      onTap: activity.onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: activity.color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(activity.icon, color: activity.color, size: 19),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(activity.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.titleMedium),
+                Text(activity.subtitle, style: AppTextStyles.bodySmall),
+              ],
+            ),
+          ),
+          Text(_relativeTime(activity.time), style: AppTextStyles.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduleTile extends StatelessWidget {
+  final dynamic appointment;
+  final VoidCallback onTap;
+
+  const _ScheduleTile({required this.appointment, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedCard(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 50,
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            decoration: BoxDecoration(
+              color: AppColors.accentOrange.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              children: [
+                Text(DateFormat('dd').format(appointment.startTime),
+                    style: AppTextStyles.titleMedium.copyWith(
+                        color: AppColors.accentOrange,
+                        fontWeight: FontWeight.w800)),
+                Text(DateFormat('MMM').format(appointment.startTime),
+                    style: AppTextStyles.labelSmall
+                        .copyWith(color: AppColors.accentOrange)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(appointment.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.titleMedium),
+                Text(
+                  '${DateFormat('h:mm a').format(appointment.startTime)}${appointment.location.isEmpty ? '' : ' • ${appointment.location}'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded,
+              color: AppColors.textSecondary),
+        ],
+      ),
+    );
+  }
+}
+
+String _relativeTime(DateTime time) {
+  final difference = DateTime.now().difference(time);
+  if (difference.inMinutes < 1) return 'Now';
+  if (difference.inHours < 1) return '${difference.inMinutes}m';
+  if (difference.inDays < 1) return '${difference.inHours}h';
+  if (difference.inDays < 7) return '${difference.inDays}d';
+  return DateFormat('dd MMM').format(time);
+}
+
 // ─── Quick Nav Grid Item ─────────────────────────────────────────────────────
 
 class _QuickNav extends StatelessWidget {
@@ -548,8 +1032,11 @@ class _QuickNav extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuickNav({
-    required this.icon, required this.label,
-    required this.color, required this.bg, required this.onTap,
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.bg,
+    required this.onTap,
   });
 
   @override
@@ -559,14 +1046,15 @@ class _QuickNav extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 52, height: 52,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
                 color: bg, borderRadius: BorderRadius.circular(14)),
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(height: 4),
-          Text(label, style: AppTextStyles.labelSmall,
-              textAlign: TextAlign.center),
+          Text(label,
+              style: AppTextStyles.labelSmall, textAlign: TextAlign.center),
         ],
       ),
     );
@@ -591,13 +1079,15 @@ class _ProjectCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 40, height: 40,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: Color(project.colorValue).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Center(child: Text(project.emoji,
-                    style: const TextStyle(fontSize: 20))),
+                child: Center(
+                    child: Text(project.emoji,
+                        style: const TextStyle(fontSize: 20))),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -605,7 +1095,8 @@ class _ProjectCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(project.name, style: AppTextStyles.titleMedium),
-                    Text('${project.completedTasks}/${project.totalTasks} tasks',
+                    Text(
+                        '${project.completedTasks}/${project.totalTasks} tasks',
                         style: AppTextStyles.bodySmall),
                   ],
                 ),
@@ -622,7 +1113,8 @@ class _ProjectCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: project.progress,
               backgroundColor: AppColors.borderLight,
-              valueColor: AlwaysStoppedAnimation<Color>(Color(project.colorValue)),
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(Color(project.colorValue)),
               minHeight: 6,
             ),
           ),
@@ -657,7 +1149,9 @@ class _TodayTaskTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _TodayTaskTile({
-    required this.task, required this.onToggle, required this.onTap,
+    required this.task,
+    required this.onToggle,
+    required this.onTap,
   });
 
   @override
@@ -672,17 +1166,21 @@ class _TodayTaskTile extends StatelessWidget {
             onTap: onToggle,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 22, height: 22,
+              width: 22,
+              height: 22,
               decoration: BoxDecoration(
-                color: task.isCompleted ? AppColors.primary : Colors.transparent,
+                color:
+                    task.isCompleted ? AppColors.primary : Colors.transparent,
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: task.isCompleted ? AppColors.primary : AppColors.border,
+                  color:
+                      task.isCompleted ? AppColors.primary : AppColors.border,
                   width: 2,
                 ),
               ),
               child: task.isCompleted
-                  ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                  ? const Icon(Icons.check_rounded,
+                      color: Colors.white, size: 14)
                   : null,
             ),
           ),
@@ -694,15 +1192,18 @@ class _TodayTaskTile extends StatelessWidget {
                 Text(
                   task.title,
                   style: AppTextStyles.titleMedium.copyWith(
-                    decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                    decoration:
+                        task.isCompleted ? TextDecoration.lineThrough : null,
                     color: task.isCompleted
-                        ? AppColors.textSecondary : AppColors.textPrimary,
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
                   ),
                 ),
                 if (task.description.isNotEmpty)
                   Text(task.description,
                       style: AppTextStyles.bodySmall,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
@@ -732,35 +1233,47 @@ class _DashboardAddNoteSheetState extends State<_DashboardAddNoteSheet> {
   int _colorIndex = 0;
 
   final List<Color> _colors = [
-    AppColors.cardPurple, AppColors.cardBlue, AppColors.cardOrange,
-    AppColors.cardPink, AppColors.cardGreen, AppColors.cardTeal,
+    AppColors.cardPurple,
+    AppColors.cardBlue,
+    AppColors.cardOrange,
+    AppColors.cardPink,
+    AppColors.cardGreen,
+    AppColors.cardTeal,
   ];
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('New Note', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 14),
-            Row(children: _colors.asMap().entries.map((entry) {
+            Row(
+                children: _colors.asMap().entries.map((entry) {
               return GestureDetector(
                 onTap: () => setState(() => _colorIndex = entry.key),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   margin: const EdgeInsets.only(right: 8),
-                  width: 28, height: 28,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
-                    color: entry.value, shape: BoxShape.circle,
+                    color: entry.value,
+                    shape: BoxShape.circle,
                     border: _colorIndex == entry.key
                         ? Border.all(color: AppColors.primary, width: 2.5)
                         : null,
@@ -769,29 +1282,166 @@ class _DashboardAddNoteSheetState extends State<_DashboardAddNoteSheet> {
               );
             }).toList()),
             const SizedBox(height: 14),
-            TextField(controller: _titleCtrl,
-                decoration: const InputDecoration(hintText: 'Title',
-                    prefixIcon: Icon(Icons.title_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _titleCtrl,
+                decoration: const InputDecoration(
+                    hintText: 'Title',
+                    prefixIcon:
+                        Icon(Icons.title_rounded, color: AppColors.primary))),
             const SizedBox(height: 12),
-            TextField(controller: _contentCtrl, maxLines: 3,
-                decoration: const InputDecoration(hintText: 'Write your note...',
-                    prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _contentCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    hintText: 'Write your note...',
+                    prefixIcon:
+                        Icon(Icons.notes_rounded, color: AppColors.primary))),
             const SizedBox(height: 24),
-            GradientButton(label: 'Save Note', onTap: () {
-              if (_titleCtrl.text.trim().isEmpty) return;
-              final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
-              if (wsId == null) return;
-              final note = NoteModel.create(
-                workspaceId: wsId,
-                title: _titleCtrl.text.trim(),
-                content: _contentCtrl.text.trim(),
-                colorValue: _colors[_colorIndex].value,
-              );
-              widget.parentRef.read(notesProvider.notifier).addNote(note);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Save Note',
+                onTap: () {
+                  if (_titleCtrl.text.trim().isEmpty) return;
+                  final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
+                  if (wsId == null) return;
+                  final note = NoteModel.create(
+                    workspaceId: wsId,
+                    title: _titleCtrl.text.trim(),
+                    content: _contentCtrl.text.trim(),
+                    colorValue: _colors[_colorIndex].value,
+                  );
+                  widget.parentRef.read(notesProvider.notifier).addNote(note);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Dashboard Quick-Add Expense Sheet ─────────────────────────────────────
+
+class _DashboardAddExpenseSheet extends StatefulWidget {
+  final WidgetRef parentRef;
+  final List<ProjectModel> projects;
+
+  const _DashboardAddExpenseSheet({
+    required this.parentRef,
+    required this.projects,
+  });
+
+  @override
+  State<_DashboardAddExpenseSheet> createState() =>
+      _DashboardAddExpenseSheetState();
+}
+
+class _DashboardAddExpenseSheetState extends State<_DashboardAddExpenseSheet> {
+  final _titleController = TextEditingController();
+  final _amountController = TextEditingController();
+  late String _projectId;
+
+  @override
+  void initState() {
+    super.initState();
+    _projectId = widget.projects.first.id;
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('Add Expense', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _amountController,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  hintText: 'Amount (₹)',
+                  prefixIcon: Icon(Icons.currency_rupee_rounded,
+                      color: AppColors.primary),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  hintText: 'Expense title',
+                  prefixIcon:
+                      Icon(Icons.label_rounded, color: AppColors.primary),
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _projectId,
+                decoration: const InputDecoration(
+                  hintText: 'Project',
+                  prefixIcon:
+                      Icon(Icons.folder_rounded, color: AppColors.primary),
+                ),
+                items: widget.projects
+                    .map((project) => DropdownMenuItem(
+                          value: project.id,
+                          child: Text(project.name),
+                        ))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _projectId = value);
+                },
+              ),
+              const SizedBox(height: 24),
+              GradientButton(
+                label: 'Add Expense',
+                onTap: () {
+                  final amount = double.tryParse(_amountController.text);
+                  if (_titleController.text.trim().isEmpty ||
+                      amount == null ||
+                      amount <= 0) {
+                    return;
+                  }
+                  final project = widget.projects
+                      .firstWhere((item) => item.id == _projectId);
+                  final expense = ExpenseModel.create(
+                    workspaceId: project.workspaceId,
+                    projectId: project.id,
+                    title: _titleController.text.trim(),
+                    amount: amount,
+                  );
+                  widget.parentRef.read(expensesProvider.notifier).add(expense);
+                  Navigator.pop(context);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -816,33 +1466,47 @@ class _DashboardAddTaskSheetState extends State<_DashboardAddTaskSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             Text('New Task', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 16),
-            TextField(controller: _titleCtrl,
-                decoration: const InputDecoration(hintText: 'Task Title',
-                    prefixIcon: Icon(Icons.task_alt_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _titleCtrl,
+                decoration: const InputDecoration(
+                    hintText: 'Task Title',
+                    prefixIcon: Icon(Icons.task_alt_rounded,
+                        color: AppColors.primary))),
             const SizedBox(height: 12),
-            TextField(controller: _descCtrl, maxLines: 2,
-                decoration: const InputDecoration(hintText: 'Description (optional)',
-                    prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary))),
+            TextField(
+                controller: _descCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    hintText: 'Description (optional)',
+                    prefixIcon:
+                        Icon(Icons.notes_rounded, color: AppColors.primary))),
             const SizedBox(height: 12),
             Row(
               children: ['low', 'medium', 'high'].map((p) {
                 final isSelected = _priority == p;
-                final color = p == 'high' ? AppColors.accentRed
-                    : p == 'medium' ? AppColors.accentOrange
-                    : AppColors.accentGreen;
+                final color = p == 'high'
+                    ? AppColors.accentRed
+                    : p == 'medium'
+                        ? AppColors.accentOrange
+                        : AppColors.accentGreen;
                 return Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -852,14 +1516,21 @@ class _DashboardAddTaskSheetState extends State<_DashboardAddTaskSheet> {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(
-                          color: isSelected ? color.withOpacity(0.12) : AppColors.surfaceVariant,
-                          border: isSelected ? Border.all(color: color, width: 2) : null,
+                          color: isSelected
+                              ? color.withOpacity(0.12)
+                              : AppColors.surfaceVariant,
+                          border: isSelected
+                              ? Border.all(color: color, width: 2)
+                              : null,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Center(child: Text(p.toUpperCase(),
-                            style: AppTextStyles.labelMedium.copyWith(
-                                color: isSelected ? color : AppColors.textSecondary,
-                                fontWeight: FontWeight.w700))),
+                        child: Center(
+                            child: Text(p.toUpperCase(),
+                                style: AppTextStyles.labelMedium.copyWith(
+                                    color: isSelected
+                                        ? color
+                                        : AppColors.textSecondary,
+                                    fontWeight: FontWeight.w700))),
                       ),
                     ),
                   ),
@@ -867,19 +1538,21 @@ class _DashboardAddTaskSheetState extends State<_DashboardAddTaskSheet> {
               }).toList(),
             ),
             const SizedBox(height: 24),
-            GradientButton(label: 'Create Task', onTap: () {
-              if (_titleCtrl.text.trim().isEmpty) return;
-              final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
-              if (wsId == null) return;
-              final task = TaskModel.create(
-                workspaceId: wsId,
-                title: _titleCtrl.text.trim(),
-                description: _descCtrl.text.trim(),
-                priority: _priority,
-              );
-              widget.parentRef.read(tasksProvider.notifier).addTask(task);
-              Navigator.pop(context);
-            }),
+            GradientButton(
+                label: 'Create Task',
+                onTap: () {
+                  if (_titleCtrl.text.trim().isEmpty) return;
+                  final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
+                  if (wsId == null) return;
+                  final task = TaskModel.create(
+                    workspaceId: wsId,
+                    title: _titleCtrl.text.trim(),
+                    description: _descCtrl.text.trim(),
+                    priority: _priority,
+                  );
+                  widget.parentRef.read(tasksProvider.notifier).addTask(task);
+                  Navigator.pop(context);
+                }),
             const SizedBox(height: 8),
           ],
         ),
@@ -896,21 +1569,27 @@ class _SearchSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         height: MediaQuery.of(context).size.height * 0.7,
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             TextField(
               autofocus: true,
               decoration: InputDecoration(
                 hintText: 'Search tasks, projects, notes...',
-                prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary),
+                prefixIcon:
+                    const Icon(Icons.search_rounded, color: AppColors.primary),
                 filled: true,
                 fillColor: AppColors.surfaceVariant,
                 border: OutlineInputBorder(
@@ -927,7 +1606,8 @@ class _SearchSheet extends StatelessWidget {
                     size: 64, color: AppColors.textTertiary.withOpacity(0.5)),
                 const SizedBox(height: 16),
                 Text('Start typing to search',
-                    style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                    style: AppTextStyles.bodyMedium
+                        .copyWith(color: AppColors.textSecondary)),
               ],
             ),
             const Spacer(),
@@ -953,9 +1633,13 @@ class _NotificationsSheet extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(child: Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2)))),
+          Center(
+              child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 20),
           Text('Notifications', style: AppTextStyles.headlineSmall),
           const SizedBox(height: 20),
@@ -966,10 +1650,12 @@ class _NotificationsSheet extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(Icons.notifications_off_outlined,
-                            size: 64, color: AppColors.textTertiary.withOpacity(0.5)),
+                            size: 64,
+                            color: AppColors.textTertiary.withOpacity(0.5)),
                         const SizedBox(height: 16),
                         Text('All caught up!',
-                            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                            style: AppTextStyles.bodyMedium
+                                .copyWith(color: AppColors.textSecondary)),
                       ],
                     ),
                   )
@@ -987,8 +1673,10 @@ class _NotificationsSheet extends StatelessWidget {
                           child: const Icon(Icons.task_alt_rounded,
                               color: AppColors.accentBlue, size: 20),
                         ),
-                        title: Text('Task due today', style: AppTextStyles.labelSmall),
-                        subtitle: Text(task.title, style: AppTextStyles.bodyMedium),
+                        title: Text('Task due today',
+                            style: AppTextStyles.labelSmall),
+                        subtitle:
+                            Text(task.title, style: AppTextStyles.bodyMedium),
                         onTap: () {
                           Navigator.pop(context);
                           context.go('/home/tasks/${task.id}');
@@ -1009,10 +1697,12 @@ class _WorkspaceSettingsSheet extends StatefulWidget {
   final dynamic workspace;
   final WidgetRef parentRef;
 
-  const _WorkspaceSettingsSheet({required this.workspace, required this.parentRef});
+  const _WorkspaceSettingsSheet(
+      {required this.workspace, required this.parentRef});
 
   @override
-  State<_WorkspaceSettingsSheet> createState() => _WorkspaceSettingsSheetState();
+  State<_WorkspaceSettingsSheet> createState() =>
+      _WorkspaceSettingsSheetState();
 }
 
 class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
@@ -1022,10 +1712,28 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
   late int _selectedColorIndex;
   late String _selectedIndustry;
 
-  final List<String> _emojis = ['🏢', '🏗️', '🛒', '💻', '🏥', '🍕', '🎓', '✈️', '🏦', '🎨'];
+  final List<String> _emojis = [
+    '🏢',
+    '🏗️',
+    '🛒',
+    '💻',
+    '🏥',
+    '🍕',
+    '🎓',
+    '✈️',
+    '🏦',
+    '🎨'
+  ];
   final List<String> _industries = [
-    'General', 'Construction', 'Technology', 'Retail',
-    'Healthcare', 'Food & Beverage', 'Education', 'Finance', 'Real Estate',
+    'General',
+    'Construction',
+    'Technology',
+    'Retail',
+    'Healthcare',
+    'Food & Beverage',
+    'Education',
+    'Finance',
+    'Real Estate',
   ];
 
   @override
@@ -1044,7 +1752,8 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
@@ -1052,13 +1761,16 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(child: Container(width: 40, height: 4,
-                  decoration: BoxDecoration(color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2)))),
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 20),
               Text('Workspace Settings', style: AppTextStyles.headlineSmall),
               const SizedBox(height: 20),
-              
               Text('Icon', style: AppTextStyles.labelLarge),
               const SizedBox(height: 10),
               SizedBox(
@@ -1071,7 +1783,8 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                     onTap: () => setState(() => _selectedEmoji = _emojis[i]),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      width: 48, height: 48,
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
                         color: _selectedEmoji == _emojis[i]
                             ? AppColors.primary.withOpacity(0.12)
@@ -1081,14 +1794,14 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                             : null,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Center(child: Text(_emojis[i],
-                          style: const TextStyle(fontSize: 24))),
+                      child: Center(
+                          child: Text(_emojis[i],
+                              style: const TextStyle(fontSize: 24))),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
-              
               Text('Color Theme', style: AppTextStyles.labelLarge),
               const SizedBox(height: 10),
               Row(
@@ -1100,11 +1813,14 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                       onTap: () => setState(() => _selectedColorIndex = i),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 32, height: 32,
+                        width: 32,
+                        height: 32,
                         decoration: BoxDecoration(
-                          color: c, shape: BoxShape.circle,
+                          color: c,
+                          shape: BoxShape.circle,
                           border: _selectedColorIndex == i
-                              ? Border.all(color: AppColors.textPrimary, width: 2.5)
+                              ? Border.all(
+                                  color: AppColors.textPrimary, width: 2.5)
                               : null,
                         ),
                       ),
@@ -1113,12 +1829,12 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                 }),
               ),
               const SizedBox(height: 16),
-              
               TextField(
                 controller: _nameCtrl,
                 decoration: const InputDecoration(
                   hintText: 'Workspace Name',
-                  prefixIcon: Icon(Icons.business_rounded, color: AppColors.primary),
+                  prefixIcon:
+                      Icon(Icons.business_rounded, color: AppColors.primary),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1126,12 +1842,15 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                 value: _selectedIndustry,
                 decoration: const InputDecoration(
                   hintText: 'Industry',
-                  prefixIcon: Icon(Icons.category_rounded, color: AppColors.primary),
+                  prefixIcon:
+                      Icon(Icons.category_rounded, color: AppColors.primary),
                 ),
                 items: _industries
-                    .map((ind) => DropdownMenuItem(value: ind, child: Text(ind)))
+                    .map(
+                        (ind) => DropdownMenuItem(value: ind, child: Text(ind)))
                     .toList(),
-                onChanged: (val) => setState(() => _selectedIndustry = val ?? 'General'),
+                onChanged: (val) =>
+                    setState(() => _selectedIndustry = val ?? 'General'),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -1139,11 +1858,11 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                 maxLines: 2,
                 decoration: const InputDecoration(
                   hintText: 'Description',
-                  prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary),
+                  prefixIcon:
+                      Icon(Icons.notes_rounded, color: AppColors.primary),
                 ),
               ),
               const SizedBox(height: 24),
-              
               GradientButton(
                 label: 'Save Settings',
                 onTap: () {
@@ -1152,11 +1871,14 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                     name: _nameCtrl.text.trim(),
                     description: _descCtrl.text.trim(),
                     emoji: _selectedEmoji,
-                    colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
+                    colorValue:
+                        AppColors.workspaceColors[_selectedColorIndex].value,
                     industry: _selectedIndustry,
                     updatedAt: DateTime.now(),
                   );
-                  widget.parentRef.read(workspacesProvider.notifier).updateWorkspace(updated);
+                  widget.parentRef
+                      .read(workspacesProvider.notifier)
+                      .updateWorkspace(updated);
                   Navigator.pop(context);
                 },
               ),

@@ -1,8 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,10 +14,12 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _scaleAnim;
   late Animation<double> _fadeAnim;
+  Timer? _navigationTimer;
 
   @override
   void initState() {
@@ -29,21 +34,33 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     );
 
     _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: const Interval(0.0, 0.5, curve: Curves.easeIn)),
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
+      ),
     );
 
     _ctrl.forward();
 
-    // Navigate to login after 2.5 seconds
-    Timer(const Duration(milliseconds: 2500), () {
-      if (mounted) {
-        context.go('/login');
-      }
-    });
+    _navigationTimer = Timer(const Duration(milliseconds: 2500), _redirect);
+  }
+
+  void _redirect() {
+    if (!mounted) {
+      return;
+    }
+
+    final bool isLoggedIn = AuthService.isLoggedIn();
+    final String nextRoute = isLoggedIn
+        ? (AuthService.hasSavedWorkspace() ? '/home' : '/workspaces')
+        : '/login';
+
+    context.go(nextRoute);
   }
 
   @override
   void dispose() {
+    _navigationTimer?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -67,21 +84,25 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      width: 80, height: 80,
+                      width: 80,
+                      height: 80,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: Colors.black.withValues(alpha: 0.1),
                             blurRadius: 20,
                             offset: const Offset(0, 10),
                           ),
                         ],
                       ),
                       child: const Center(
-                        child: Icon(Icons.rocket_launch_rounded, 
-                            color: AppColors.primary, size: 40),
+                        child: Icon(
+                          Icons.rocket_launch_rounded,
+                          color: AppColors.primary,
+                          size: 40,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -96,7 +117,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     Text(
                       'Manage Everything, Seamlessly.',
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                       ),
                     ),
                   ],
