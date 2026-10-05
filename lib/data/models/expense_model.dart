@@ -52,6 +52,9 @@ class ExpenseModel extends HiveObject {
   @HiveField(11)
   String? addedById;
 
+  @HiveField(12, defaultValue: false)
+  bool isCompleted;
+
   ExpenseModel({
     required this.id,
     required this.workspaceId,
@@ -65,6 +68,7 @@ class ExpenseModel extends HiveObject {
     required this.createdAt,
     this.receiptUrl,
     this.addedById,
+    this.isCompleted = false,
   });
 
   ExpenseType get type => typeStr == 'income' ? ExpenseType.income : ExpenseType.expense;

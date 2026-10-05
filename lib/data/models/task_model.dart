@@ -87,7 +87,7 @@ class TaskModel extends HiveObject {
   @HiveField(13)
   DateTime? completedAt;
 
-  @HiveField(14)
+  @HiveField(14, defaultValue: [])
   List<SubtaskModel> subtasks;
 
   TaskModel({
@@ -185,6 +185,51 @@ class TaskModel extends HiveObject {
       isCompleted: isCompleted ?? this.isCompleted,
       completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
       subtasks: subtasks ?? List.from(this.subtasks),
+    );
+  }
+}
+
+class CompatibleTaskModelAdapter extends TaskModelAdapter {
+  @override
+  TaskModel read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final firstFieldId = reader.readByte();
+    final fields = <int, dynamic>{};
+
+    if (firstFieldId == 15) {
+      // Previous generated code emitted an extra field ID and completion date.
+      var fieldId = reader.readByte();
+      for (var i = 0; i < numOfFields; i++) {
+        fields[fieldId] = reader.read();
+        if (i < numOfFields - 1) fieldId = reader.readByte();
+      }
+
+      reader.read();
+      final trailingFieldId = reader.readByte();
+      if (trailingFieldId == 14) fields[14] = reader.read();
+    } else {
+      fields[firstFieldId] = reader.read();
+      for (var i = 1; i < numOfFields; i++) {
+        fields[reader.readByte()] = reader.read();
+      }
+    }
+
+    return TaskModel(
+      id: fields[0] as String,
+      workspaceId: fields[1] as String,
+      projectId: fields[2] as String?,
+      title: fields[3] as String,
+      description: fields[4] as String,
+      statusStr: fields[5] as String,
+      priorityStr: fields[6] as String,
+      dueDate: fields[7] as DateTime?,
+      createdAt: fields[8] as DateTime,
+      updatedAt: fields[9] as DateTime,
+      assigneeIds: (fields[10] as List).cast<String>(),
+      tags: (fields[11] as List).cast<String>(),
+      isCompleted: fields[12] as bool,
+      completedAt: fields[13] as DateTime?,
+      subtasks: (fields[14] as List?)?.cast<SubtaskModel>() ?? const [],
     );
   }
 }

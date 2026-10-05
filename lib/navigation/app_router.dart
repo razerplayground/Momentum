@@ -17,6 +17,7 @@ import '../features/employees/screens/employees_screen.dart';
 import '../features/employees/screens/employee_detail_screen.dart';
 import '../features/followups/screens/followups_screen.dart';
 import '../features/expenses/screens/expenses_screen.dart';
+import '../features/jobs/screens/jobs_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -143,6 +144,10 @@ final appRouter = GoRouter(
               ),
             ),
           ],
+        ),
+        GoRoute(
+          path: 'jobs',
+          builder: (context, state) => const JobsScreen(),
         ),
         GoRoute(
           path: 'followups',

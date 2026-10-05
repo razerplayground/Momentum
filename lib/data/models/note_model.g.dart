@@ -26,13 +26,14 @@ class NoteModelAdapter extends TypeAdapter<NoteModel> {
       sharedWithIds: (fields[9] as List).cast<String>(),
       isPinned: fields[10] as bool,
       colorValue: fields[11] as int,
+      isCompleted: fields[12] == null ? false : fields[12] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, NoteModel obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -56,7 +57,9 @@ class NoteModelAdapter extends TypeAdapter<NoteModel> {
       ..writeByte(10)
       ..write(obj.isPinned)
       ..writeByte(11)
-      ..write(obj.colorValue);
+      ..write(obj.colorValue)
+      ..writeByte(12)
+      ..write(obj.isCompleted);
   }
 
   @override

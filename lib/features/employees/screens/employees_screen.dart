@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/models/employee_model.dart';
+import '../../../data/providers/auth_provider.dart';
 import '../../../data/providers/employee_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
+import '../../../data/services/api_service.dart';
 import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/avatar_stack.dart';
 
@@ -284,26 +286,16 @@ class _AddEmployeeSheetState extends State<_AddEmployeeSheet> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
+  final _titleController = TextEditingController();
   final _deptController = TextEditingController(text: 'General');
-  String _role = 'other';
   int _colorIndex = 0;
-
-  final List<String> _roles = [
-    'manager',
-    'developer',
-    'designer',
-    'sales',
-    'hr',
-    'accountant',
-    'other'
-  ];
+  bool _isSaving = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
+    _titleController.dispose();
     _deptController.dispose();
     super.dispose();
   }
@@ -394,18 +386,6 @@ class _AddEmployeeSheetState extends State<_AddEmployeeSheet> {
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  validator: (value) =>
-                      (value ?? '').trim().isEmpty ? 'Phone is required' : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone *',
-                    prefixIcon:
-                        Icon(Icons.phone_rounded, color: AppColors.primary),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
                   controller: _deptController,
                   validator: (value) => (value ?? '').trim().isEmpty
                       ? 'Department is required'
@@ -417,42 +397,110 @@ class _AddEmployeeSheetState extends State<_AddEmployeeSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _role,
+                TextFormField(
+                  controller: _titleController,
+                  validator: (value) => (value ?? '').trim().isEmpty
+                      ? 'Job title is required'
+                      : null,
                   decoration: const InputDecoration(
-                      labelText: 'Role *',
-                      prefixIcon:
-                          Icon(Icons.work_rounded, color: AppColors.primary)),
-                  items: _roles
-                      .map((r) => DropdownMenuItem(
-                          value: r, child: Text(r.toUpperCase())))
-                      .toList(),
-                  onChanged: (val) => setState(() => _role = val ?? 'other'),
+                    labelText: 'Job Title *',
+                    prefixIcon:
+                        Icon(Icons.work_rounded, color: AppColors.primary),
+                  ),
                 ),
                 const SizedBox(height: 24),
                 GradientButton(
-                    label: 'Add Employee',
-                    onTap: () {
+                    label: _isSaving ? 'Saving Employee...' : 'Add Employee',
+                    onTap: () async {
+                      if (_isSaving) return;
                       if (!_formKey.currentState!.validate()) return;
-                      final workspaceId =
+                      final workspaces =
+                          widget.parentRef.read(workspacesProvider);
+                      final savedWorkspaceId =
                           widget.parentRef.read(activeWorkspaceIdProvider);
-                      if (workspaceId == null) return;
+                      final workspace = workspaces
+                              .where((item) => item.id == savedWorkspaceId)
+                              .firstOrNull ??
+                          widget.parentRef.read(activeWorkspaceProvider) ??
+                          workspaces.firstOrNull;
+                      final workspaceId = workspace?.id;
+                      if (workspaceId == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Select or create a business first.'),
+                          ),
+                        );
+                        return;
+                      }
+                      setState(() => _isSaving = true);
                       final employee = EmployeeModel.create(
                         workspaceId: workspaceId,
                         name: _nameController.text.trim(),
                         email: _emailController.text.trim(),
-                        phone: _phoneController.text.trim(),
-                        role: _role,
+                        role: _titleController.text.trim(),
                         department: _deptController.text.trim().isEmpty
                             ? 'General'
                             : _deptController.text.trim(),
                         avatarColorValue:
                             AppColors.workspaceColors[_colorIndex].value,
                       );
-                      widget.parentRef
-                          .read(employeesProvider.notifier)
-                          .addEmployee(employee);
-                      Navigator.pop(context);
+                      try {
+                        await widget.parentRef
+                            .read(employeesProvider.notifier)
+                            .addEmployee(employee);
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (error) {
+                        if (context.mounted) {
+                          setState(() => _isSaving = false);
+                          if (error is ApiException &&
+                              error.statusCode == 401) {
+                            await widget.parentRef
+                                .read(authProvider.notifier)
+                                .logout();
+                            if (!context.mounted) return;
+                            Navigator.pop(context);
+                            context.go('/login');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Session expired. Please log in again.'),
+                              ),
+                            );
+                            return;
+                          }
+                          if (error is ApiException &&
+                              error.statusCode == 403 &&
+                              error.message
+                                  .toLowerCase()
+                                  .contains('individual plan')) {
+                            await showDialog<void>(
+                              context: context,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('Organization plan required'),
+                                content: const Text(
+                                  'This business is on the Individual plan. '
+                                  'Upgrade it to the Organization plan to add employees.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext),
+                                    child: const Text('OK'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            return;
+                          }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Could not add employee: ${error is ApiException ? '${error.message} (HTTP ${error.statusCode ?? 'unknown'})' : error}',
+                              ),
+                            ),
+                          );
+                        }
+                      }
                     }),
                 const SizedBox(height: 8),
               ],

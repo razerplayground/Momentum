@@ -1,7 +1,10 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// ignore_for_file: type=lint
 
 part of 'task_model.dart';
+
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class SubtaskModelAdapter extends TypeAdapter<SubtaskModel> {
   @override
@@ -68,16 +71,14 @@ class TaskModelAdapter extends TypeAdapter<TaskModel> {
       tags: (fields[11] as List).cast<String>(),
       isCompleted: fields[12] as bool,
       completedAt: fields[13] as DateTime?,
-      subtasks: fields.containsKey(14)
-          ? (fields[14] as List).cast<SubtaskModel>()
-          : <SubtaskModel>[],
+      subtasks:
+          fields[14] == null ? [] : (fields[14] as List).cast<SubtaskModel>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, TaskModel obj) {
     writer
-      ..writeByte(14)
       ..writeByte(15)
       ..writeByte(0)
       ..write(obj.id)
@@ -106,7 +107,6 @@ class TaskModelAdapter extends TypeAdapter<TaskModel> {
       ..writeByte(12)
       ..write(obj.isCompleted)
       ..writeByte(13)
-      ..write(obj.completedAt)
       ..write(obj.completedAt)
       ..writeByte(14)
       ..write(obj.subtasks);

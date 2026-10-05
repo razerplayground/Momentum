@@ -13,6 +13,7 @@ import '../../../data/providers/notes_provider.dart';
 import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
 import '../../../data/providers/project_provider.dart';
+import '../../../data/providers/project_progress_provider.dart';
 import '../../../data/providers/employee_provider.dart';
 import '../../../data/providers/other_providers.dart';
 import '../../../shared/widgets/common_widgets.dart';
@@ -1063,14 +1064,15 @@ class _QuickNav extends StatelessWidget {
 
 // ─── Active Project Card (now tappable) ──────────────────────────────────────
 
-class _ProjectCard extends StatelessWidget {
+class _ProjectCard extends ConsumerWidget {
   final dynamic project;
   final VoidCallback onTap;
 
   const _ProjectCard({required this.project, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progress = ref.watch(projectProgressProvider(project.id));
     return AnimatedCard(
       onTap: onTap,
       child: Column(
@@ -1095,8 +1097,7 @@ class _ProjectCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(project.name, style: AppTextStyles.titleMedium),
-                    Text(
-                        '${project.completedTasks}/${project.totalTasks} tasks',
+                    Text('${progress.completed}/${progress.total} items',
                         style: AppTextStyles.bodySmall),
                   ],
                 ),
@@ -1111,7 +1112,7 @@ class _ProjectCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: project.progress,
+              value: progress.value,
               backgroundColor: AppColors.borderLight,
               valueColor:
                   AlwaysStoppedAnimation<Color>(Color(project.colorValue)),
@@ -1122,7 +1123,7 @@ class _ProjectCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('${(project.progress * 100).toInt()}% complete',
+              Text('${(progress.value * 100).round()}% complete',
                   style: AppTextStyles.labelSmall),
               if (project.dueDate != null)
                 Text(

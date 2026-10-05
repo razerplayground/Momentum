@@ -165,6 +165,7 @@ sortedTasks.sort((a, b) {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'tasksScreenFab',
         onPressed: () => _showAddTask(context),
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add_rounded, color: Colors.white),

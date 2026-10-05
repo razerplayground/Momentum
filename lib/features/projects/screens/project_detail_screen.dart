@@ -14,6 +14,7 @@ import '../../../data/providers/employee_provider.dart';
 import '../../../data/providers/project_provider.dart';
 import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/other_providers.dart';
+import '../../../data/providers/project_progress_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
 import '../../../shared/widgets/avatar_stack.dart';
 import '../../../shared/widgets/common_widgets.dart';
@@ -124,6 +125,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
   Widget build(BuildContext context) {
     final project = ref.watch(projectByIdProvider(widget.projectId));
     final employees = ref.watch(workspaceEmployeesProvider);
+    final progress = ref.watch(projectProgressProvider(widget.projectId));
 
     if (project == null) {
       return const Scaffold(body: Center(child: Text('Project not found')));
@@ -224,12 +226,18 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
-                            value: project.progress,
+                            value: progress.value,
                             backgroundColor: Colors.white24,
                             valueColor: const AlwaysStoppedAnimation<Color>(
                                 Colors.white),
                             minHeight: 6,
                           ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${(progress.value * 100).round()}% complete · ${progress.completed}/${progress.total} items',
+                          style: AppTextStyles.labelSmall
+                              .copyWith(color: Colors.white70),
                         ),
                       ],
                     ),
@@ -530,12 +538,81 @@ class _FinanceTab extends ConsumerWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Edit transaction',
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => _showEditExpense(context, ref, e),
+                      ),
+                      Checkbox(
+                        value: e.isCompleted,
+                        onChanged: (_) => ref
+                            .read(expensesProvider.notifier)
+                            .toggleCompletion(e.id),
+                        activeColor: AppColors.primary,
+                      ),
+                      IconButton(
+                        tooltip: 'Delete transaction',
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: AppColors.accentRed,
+                        ),
+                        onPressed: () => _confirmAndDelete(context, ref, e),
+                      ),
                     ],
                   ),
                 ),
               )),
       ],
     );
+  }
+
+  void _showEditExpense(
+    BuildContext context,
+    WidgetRef ref,
+    ExpenseModel expense,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _EditProjectExpenseSheet(
+        expense: expense,
+        parentRef: ref,
+      ),
+    );
+  }
+
+  Future<void> _confirmAndDelete(
+    BuildContext context,
+    WidgetRef ref,
+    ExpenseModel expense,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Transaction'),
+        content: Text(
+          'Delete ${expense.isIncome ? 'income' : 'expense'} "${expense.title}"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref.read(expensesProvider.notifier).delete(expense.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaction deleted')),
+      );
+    }
   }
 }
 
@@ -641,6 +718,15 @@ class _FollowupsTab extends ConsumerWidget {
                   ),
                 ),
                 StatusChip(status: f.statusStr),
+                Checkbox(
+                  value: f.statusStr == 'done',
+                  onChanged: f.statusStr == 'done'
+                      ? null
+                      : (_) => ref
+                          .read(followupsProvider.notifier)
+                          .markDone(f.id, null),
+                  activeColor: AppColors.primary,
+                ),
               ],
             ),
           ),
@@ -715,11 +801,24 @@ class _NotesTab extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  note.isPinned ? '📌 ${note.title}' : note.title,
-                  style: AppTextStyles.titleLarge,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        note.isPinned ? '📌 ${note.title}' : note.title,
+                        style: AppTextStyles.titleLarge,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Checkbox(
+                      value: note.isCompleted,
+                      onChanged: (_) => ref
+                          .read(notesProvider.notifier)
+                          .toggleCompletion(note.id),
+                      activeColor: AppColors.primary,
+                    ),
+                  ],
                 ),
                 if (note.content.isNotEmpty) ...[
                   const SizedBox(height: 6),
@@ -739,6 +838,114 @@ class _NotesTab extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _EditProjectExpenseSheet extends StatefulWidget {
+  final ExpenseModel expense;
+  final WidgetRef parentRef;
+
+  const _EditProjectExpenseSheet({
+    required this.expense,
+    required this.parentRef,
+  });
+
+  @override
+  State<_EditProjectExpenseSheet> createState() =>
+      _EditProjectExpenseSheetState();
+}
+
+class _EditProjectExpenseSheetState extends State<_EditProjectExpenseSheet> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _amountController;
+  late bool _isIncome;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.expense.title);
+    _amountController =
+        TextEditingController(text: widget.expense.amount.toString());
+    _isIncome = widget.expense.isIncome;
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Edit Transaction', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 16),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Expense')),
+                  ButtonSegment(value: true, label: Text('Income')),
+                ],
+                selected: {_isIncome},
+                onSelectionChanged: (selection) {
+                  setState(() => _isIncome = selection.first);
+                },
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(labelText: 'Title'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _amountController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Amount'),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    final title = _titleController.text.trim();
+                    final amount = double.tryParse(_amountController.text);
+                    if (title.isEmpty || amount == null || amount <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Enter a title and valid amount'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    final updatedExpense = widget.expense
+                      ..title = title
+                      ..amount = amount
+                      ..typeStr = _isIncome ? 'income' : 'expense';
+                    await widget.parentRef
+                        .read(expensesProvider.notifier)
+                        .update(updatedExpense);
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  child: const Text('Save Changes'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

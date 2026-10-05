@@ -6,6 +6,7 @@ import '../models/workspace_model.dart';
 import '../services/api_service.dart';
 import '../../core/constants/app_constants.dart';
 import '../../features/auth/auth_service.dart';
+import 'auth_provider.dart';
 
 final workspaceBoxProvider = Provider<Box<WorkspaceModel>>((ref) {
   return Hive.box<WorkspaceModel>(AppConstants.workspaceBox);
@@ -59,13 +60,23 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
     loadWorkspaces();
   }
 
+  bool get canAddWorkspace {
+    final user = _ref.read(authProvider).user;
+    final plan = user?.plan?.trim().toLowerCase();
+    final isOrganization = plan == 'organization' ||
+        (user?.organizationName?.trim().isNotEmpty ?? false);
+    return isOrganization || state.isEmpty;
+  }
+
   /// Load workspaces from Hive box first, then fetch fresh list from REST API
   Future<void> loadWorkspaces() async {
     final box = Hive.box<WorkspaceModel>(AppConstants.workspaceBox);
     final email = AuthService.getSessionEmail().trim().toLowerCase();
     final cached = box.values.toList();
     if (cached.isNotEmpty) {
-      state = cached.where((w) => w.ownerEmail.isEmpty || w.ownerEmail == email).toList();
+      state = cached
+          .where((w) => w.ownerEmail.isEmpty || w.ownerEmail == email)
+          .toList();
     }
 
     try {
@@ -82,7 +93,8 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
 
         // Ensure an active workspace ID is set if available
         final activeId = _ref.read(activeWorkspaceIdProvider);
-        if ((activeId == null || !state.any((w) => w.id == activeId)) && state.isNotEmpty) {
+        if ((activeId == null || !state.any((w) => w.id == activeId)) &&
+            state.isNotEmpty) {
           setActiveWorkspace(state.first.id);
         }
       }
@@ -93,6 +105,8 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
 
   /// Add new workspace via REST API and save locally
   Future<bool> addWorkspace(WorkspaceModel workspace) async {
+    if (!canAddWorkspace) return false;
+
     final box = Hive.box<WorkspaceModel>(AppConstants.workspaceBox);
     final email = AuthService.getSessionEmail().trim().toLowerCase();
     workspace.ownerEmail = email;

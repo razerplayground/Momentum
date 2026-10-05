@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">b8k8o7x7ayujh4mx5z9rbmrc.161.97.134.101.sslip.io</domain>
+    </domain-config>
+</network-security-config>

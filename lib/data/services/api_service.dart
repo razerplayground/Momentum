@@ -19,7 +19,8 @@ class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.body});
 
   @override
-  String toString() => 'ApiException(statusCode: $statusCode, message: $message)';
+  String toString() =>
+      'ApiException(statusCode: $statusCode, message: $message)';
 }
 
 /// Provider for ApiService singleton
@@ -38,8 +39,10 @@ class ApiService {
 
   Box get _settingsBox => Hive.box(AppConstants.settingsBox);
 
-  String? get accessToken => _settingsBox.get(ApiConstants.accessTokenKey) as String?;
-  String? get refreshToken => _settingsBox.get(ApiConstants.refreshTokenKey) as String?;
+  String? get accessToken =>
+      _settingsBox.get(ApiConstants.accessTokenKey) as String?;
+  String? get refreshToken =>
+      _settingsBox.get(ApiConstants.refreshTokenKey) as String?;
 
   Future<void> saveTokens({required String access, String? refresh}) async {
     await _settingsBox.put(ApiConstants.accessTokenKey, access);
@@ -70,8 +73,9 @@ class ApiService {
 
   Map<String, String> _buildHeaders({bool requiresAuth = true}) {
     final headers = Map<String, String>.from(ApiConstants.defaultHeaders);
-    if (requiresAuth && accessToken != null && accessToken!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $accessToken';
+    final token = accessToken?.trim();
+    if (requiresAuth && token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
     }
     return headers;
   }
@@ -104,19 +108,29 @@ class ApiService {
 
       switch (method.toUpperCase()) {
         case 'GET':
-          response = await _client.get(uri, headers: headers).timeout(ApiConstants.timeoutDuration);
+          response = await _client
+              .get(uri, headers: headers)
+              .timeout(ApiConstants.timeoutDuration);
           break;
         case 'POST':
-          response = await _client.post(uri, headers: headers, body: jsonBody).timeout(ApiConstants.timeoutDuration);
+          response = await _client
+              .post(uri, headers: headers, body: jsonBody)
+              .timeout(ApiConstants.timeoutDuration);
           break;
         case 'PATCH':
-          response = await _client.patch(uri, headers: headers, body: jsonBody).timeout(ApiConstants.timeoutDuration);
+          response = await _client
+              .patch(uri, headers: headers, body: jsonBody)
+              .timeout(ApiConstants.timeoutDuration);
           break;
         case 'PUT':
-          response = await _client.put(uri, headers: headers, body: jsonBody).timeout(ApiConstants.timeoutDuration);
+          response = await _client
+              .put(uri, headers: headers, body: jsonBody)
+              .timeout(ApiConstants.timeoutDuration);
           break;
         case 'DELETE':
-          response = await _client.delete(uri, headers: headers, body: jsonBody).timeout(ApiConstants.timeoutDuration);
+          response = await _client
+              .delete(uri, headers: headers, body: jsonBody)
+              .timeout(ApiConstants.timeoutDuration);
           break;
         default:
           throw ApiException('Unsupported HTTP method: $method');
@@ -127,7 +141,10 @@ class ApiService {
     }
 
     // Handle 401 Unauthorized token refresh logic
-    if (response.statusCode == 401 && requiresAuth && !isRetry && refreshToken != null) {
+    if (response.statusCode == 401 &&
+        requiresAuth &&
+        !isRetry &&
+        refreshToken != null) {
       final refreshed = await _attemptTokenRefresh();
       if (refreshed) {
         return _sendRequest(
@@ -140,7 +157,8 @@ class ApiService {
         );
       } else {
         await clearSession();
-        throw ApiException('Session expired. Please log in again.', statusCode: 401);
+        throw ApiException('Session expired. Please log in again.',
+            statusCode: 401);
       }
     }
 
@@ -149,20 +167,24 @@ class ApiService {
 
   Future<bool> _attemptTokenRefresh() async {
     final currentRefreshToken = refreshToken;
-    if (currentRefreshToken == null || currentRefreshToken.isEmpty) return false;
+    if (currentRefreshToken == null || currentRefreshToken.isEmpty)
+      return false;
 
     try {
       final uri = _buildUri(ApiConstants.refresh);
-      final response = await _client.post(
-        uri,
-        headers: ApiConstants.defaultHeaders,
-        body: jsonEncode({'refreshToken': currentRefreshToken}),
-      ).timeout(ApiConstants.timeoutDuration);
+      final response = await _client
+          .post(
+            uri,
+            headers: ApiConstants.defaultHeaders,
+            body: jsonEncode({'refreshToken': currentRefreshToken}),
+          )
+          .timeout(ApiConstants.timeoutDuration);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final newAccess = data['accessToken'] as String?;
-        final newRefresh = data['refreshToken'] as String? ?? currentRefreshToken;
+        final newRefresh =
+            data['refreshToken'] as String? ?? currentRefreshToken;
         if (newAccess != null) {
           await saveTokens(access: newAccess, refresh: newRefresh);
           return true;
@@ -209,19 +231,25 @@ class ApiService {
   }
 
   // Generic Public Helper Methods
-  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams, bool requiresAuth = true}) =>
-      _sendRequest('GET', endpoint, queryParams: queryParams, requiresAuth: requiresAuth);
+  Future<dynamic> get(String endpoint,
+          {Map<String, String>? queryParams, bool requiresAuth = true}) =>
+      _sendRequest('GET', endpoint,
+          queryParams: queryParams, requiresAuth: requiresAuth);
 
-  Future<dynamic> post(String endpoint, {dynamic body, bool requiresAuth = true}) =>
+  Future<dynamic> post(String endpoint,
+          {dynamic body, bool requiresAuth = true}) =>
       _sendRequest('POST', endpoint, body: body, requiresAuth: requiresAuth);
 
-  Future<dynamic> patch(String endpoint, {dynamic body, bool requiresAuth = true}) =>
+  Future<dynamic> patch(String endpoint,
+          {dynamic body, bool requiresAuth = true}) =>
       _sendRequest('PATCH', endpoint, body: body, requiresAuth: requiresAuth);
 
-  Future<dynamic> put(String endpoint, {dynamic body, bool requiresAuth = true}) =>
+  Future<dynamic> put(String endpoint,
+          {dynamic body, bool requiresAuth = true}) =>
       _sendRequest('PUT', endpoint, body: body, requiresAuth: requiresAuth);
 
-  Future<dynamic> delete(String endpoint, {dynamic body, bool requiresAuth = true}) =>
+  Future<dynamic> delete(String endpoint,
+          {dynamic body, bool requiresAuth = true}) =>
       _sendRequest('DELETE', endpoint, body: body, requiresAuth: requiresAuth);
 
   // ─── AUTH SERVICES ───────────────────────────────────────────────
@@ -245,7 +273,8 @@ class ApiService {
       }
 
       UserModel? user;
-      if (response.containsKey('user') && response['user'] is Map<String, dynamic>) {
+      if (response.containsKey('user') &&
+          response['user'] is Map<String, dynamic>) {
         user = UserModel.fromJson(response['user'] as Map<String, dynamic>);
         await saveUserData(user);
       } else {
@@ -318,7 +347,8 @@ class ApiService {
   }
 
   /// Update current user profile
-  Future<UserModel> updateMe({String? name, String? avatarUrl, String? phoneNumber}) async {
+  Future<UserModel> updateMe(
+      {String? name, String? avatarUrl, String? phoneNumber}) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
     if (avatarUrl != null) body['avatarUrl'] = avatarUrl;
@@ -405,7 +435,8 @@ class ApiService {
     final body = <String, dynamic>{
       'name': name,
       if (industry != null) 'industry': industry,
-      if (address != null || description.isNotEmpty) 'address': address ?? description,
+      if (address != null || description.isNotEmpty)
+        'address': address ?? description,
       if (contactEmail != null) 'contactEmail': contactEmail,
       if (foundedYear != null) 'foundedYear': foundedYear,
     };
@@ -424,7 +455,8 @@ class ApiService {
       return workspace.copyWith(
         emoji: emoji,
         colorValue: colorValue,
-        description: description.isNotEmpty ? description : workspace.description,
+        description:
+            description.isNotEmpty ? description : workspace.description,
       );
     }
 
@@ -433,7 +465,8 @@ class ApiService {
 
   /// Get single workspace details
   Future<WorkspaceModel> getWorkspaceDetail(String workspaceId) async {
-    final res = await get(ApiConstants.workspaceDetail(workspaceId), requiresAuth: true);
+    final res = await get(ApiConstants.workspaceDetail(workspaceId),
+        requiresAuth: true);
     if (res is Map<String, dynamic>) {
       return WorkspaceModel.fromJson(res);
     }
@@ -457,7 +490,8 @@ class ApiService {
       if (foundedYear != null) 'foundedYear': foundedYear,
     };
 
-    final res = await patch(ApiConstants.workspaceDetail(workspaceId), body: body, requiresAuth: true);
+    final res = await patch(ApiConstants.workspaceDetail(workspaceId),
+        body: body, requiresAuth: true);
     if (res is Map<String, dynamic>) {
       return WorkspaceModel.fromJson(res);
     }
@@ -467,5 +501,225 @@ class ApiService {
   /// Delete workspace
   Future<void> deleteWorkspace(String workspaceId) async {
     await delete(ApiConstants.workspaceDetail(workspaceId), requiresAuth: true);
+  }
+
+  /// Fetch employees for a business.
+  Future<List<Map<String, dynamic>>> getEmployees(String businessId) async {
+    final response =
+        await get(ApiConstants.employees(businessId), requiresAuth: true);
+    dynamic items = response;
+    if (response == null) return [];
+    if (items is Map<String, dynamic>) {
+      items = items['employees'] ?? items['data'] ?? items['items'] ?? items;
+      if (items is Map<String, dynamic>) {
+        items = items['employees'] ?? items['items'] ?? items['data'];
+      }
+    }
+    if (items is! List) {
+      throw ApiException('Failed to retrieve employees');
+    }
+    return items.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Create an employee for a business.
+  Future<Map<String, dynamic>> createEmployee(
+    String businessId,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await post(ApiConstants.employees(businessId),
+        body: body, requiresAuth: true);
+    final employee = _employeeResponseMap(response);
+    if (employee != null &&
+        ((employee['id'] ?? employee['_id'])?.toString().isNotEmpty ?? false)) {
+      return employee;
+    }
+
+    final email = body['email']?.toString().trim().toLowerCase();
+    if (email != null && email.isNotEmpty) {
+      final employees = await getEmployees(businessId);
+      for (final created in employees) {
+        if (created['email']?.toString().trim().toLowerCase() == email) {
+          return created;
+        }
+      }
+    }
+
+    throw ApiException(
+      'Employee creation succeeded, but the server did not return the new employee. Refresh the employee list and try again.',
+    );
+  }
+
+  /// Update an employee for a business.
+  Future<void> updateEmployee(
+    String businessId,
+    String employeeId,
+    Map<String, dynamic> body,
+  ) async {
+    await patch(ApiConstants.employeeDetail(businessId, employeeId),
+        body: body, requiresAuth: true);
+  }
+
+  /// Delete an employee for a business.
+  Future<void> deleteEmployee(String businessId, String employeeId) async {
+    await delete(ApiConstants.employeeDetail(businessId, employeeId),
+        requiresAuth: true);
+  }
+
+  /// Fetch jobs for a business.
+  Future<List<Map<String, dynamic>>> getJobs(String businessId) async {
+    final response =
+        await get(ApiConstants.jobs(businessId), requiresAuth: true);
+    if (response == null) return [];
+    dynamic items = response;
+    for (var depth = 0; depth < 3 && items is Map<String, dynamic>; depth++) {
+      final nested = items['jobs'] ?? items['items'] ?? items['data'];
+      if (nested == null) {
+        throw ApiException('Failed to retrieve jobs');
+      }
+      items = nested;
+    }
+    if (items is! List) {
+      throw ApiException('Failed to retrieve jobs');
+    }
+    return items.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Create a job for a business.
+  Future<Map<String, dynamic>> createJob(
+    String businessId,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await post(ApiConstants.jobs(businessId),
+        body: body, requiresAuth: true);
+    final job = _jobResponseMap(response);
+    if (job == null) {
+      throw ApiException(
+        'Job creation may have succeeded, but the server did not return a job. Refresh the job list before retrying.',
+      );
+    }
+    return {...body, ...job};
+  }
+
+  /// Update a job for a business.
+  Future<void> updateJob(
+    String businessId,
+    String jobId,
+    Map<String, dynamic> body,
+  ) async {
+    await patch(ApiConstants.jobDetail(businessId, jobId),
+        body: body, requiresAuth: true);
+  }
+
+  /// Delete a job from a business.
+  Future<void> deleteJob(String businessId, String jobId) async {
+    await delete(ApiConstants.jobDetail(businessId, jobId), requiresAuth: true);
+  }
+
+  Map<String, dynamic>? _jobResponseMap(dynamic response) {
+    dynamic job = response;
+    for (var depth = 0; depth < 3; depth++) {
+      if (job is! Map<String, dynamic>) return null;
+      final nested = job['job'] ?? job['data'] ?? job['item'];
+      if (nested is Map<String, dynamic>) {
+        job = nested;
+      } else {
+        return (job['id'] ?? job['_id']) != null ? job : null;
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _employeeResponseMap(dynamic response) {
+    dynamic employee = response;
+    for (var depth = 0; depth < 3; depth++) {
+      if (employee is! Map<String, dynamic>) return null;
+      final nested =
+          employee['employee'] ?? employee['data'] ?? employee['item'];
+      if (nested is Map<String, dynamic>) {
+        employee = nested;
+      } else {
+        return employee;
+      }
+    }
+    return employee is Map<String, dynamic> ? employee : null;
+  }
+
+  /// Fetch payroll entries for a business.
+  Future<List<Map<String, dynamic>>> getPayroll(String businessId) async {
+    final response =
+        await get(ApiConstants.payrollList(businessId), requiresAuth: true);
+    if (response == null) return [];
+
+    dynamic entries = response;
+    for (var depth = 0;
+        depth < 3 && entries is Map<String, dynamic>;
+        depth++) {
+      final nested =
+          entries['payroll'] ?? entries['entries'] ?? entries['items'] ?? entries['data'];
+      if (nested == null) {
+        throw ApiException('Failed to retrieve payroll entries');
+      }
+      entries = nested;
+    }
+    if (entries is! List) {
+      throw ApiException('Failed to retrieve payroll entries');
+    }
+    return entries.whereType<Map<String, dynamic>>().toList();
+  }
+
+  /// Fetch payroll summary for a business.
+  Future<Map<String, dynamic>> getPayrollSummary(String businessId) async {
+    final response = await get(
+      ApiConstants.payrollSummary(businessId),
+      requiresAuth: true,
+    );
+    if (response is! Map<String, dynamic>) {
+      throw ApiException('Failed to retrieve payroll summary');
+    }
+
+    dynamic summary = response;
+    for (var depth = 0; depth < 3 && summary is Map<String, dynamic>; depth++) {
+      final nested = summary['summary'] ?? summary['data'];
+      if (nested is Map<String, dynamic>) {
+        summary = nested;
+      } else {
+        return summary;
+      }
+    }
+    if (summary is Map<String, dynamic>) return summary;
+    throw ApiException('Failed to retrieve payroll summary');
+  }
+
+  /// Run payroll for a business using the server's payroll-run payload.
+  Future<dynamic> runPayroll(
+    String businessId,
+    Map<String, dynamic> body,
+  ) async {
+    return post(
+      ApiConstants.payrollRun(businessId),
+      body: body,
+      requiresAuth: true,
+    );
+  }
+
+  /// Update a payroll entry for a business.
+  Future<void> updatePayrollEntry(
+    String businessId,
+    String entryId,
+    Map<String, dynamic> body,
+  ) async {
+    await patch(
+      ApiConstants.payrollEntryDetail(businessId, entryId),
+      body: body,
+      requiresAuth: true,
+    );
+  }
+
+  /// Delete a payroll entry from a business.
+  Future<void> deletePayrollEntry(String businessId, String entryId) async {
+    await delete(
+      ApiConstants.payrollEntryDetail(businessId, entryId),
+      requiresAuth: true,
+    );
   }
 }

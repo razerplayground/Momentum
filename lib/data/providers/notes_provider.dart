@@ -68,6 +68,27 @@ class NoteNotifier extends StateNotifier<List<NoteModel>> {
       sharedWithIds: note.sharedWithIds,
       isPinned: !note.isPinned,
       colorValue: note.colorValue,
+      isCompleted: note.isCompleted,
+    );
+    await updateNote(updated);
+  }
+
+  Future<void> toggleCompletion(String id) async {
+    final note = state.firstWhere((note) => note.id == id);
+    final updated = NoteModel(
+      id: note.id,
+      workspaceId: note.workspaceId,
+      projectId: note.projectId,
+      title: note.title,
+      content: note.content,
+      tags: note.tags,
+      priorityStr: note.priorityStr,
+      createdAt: note.createdAt,
+      updatedAt: DateTime.now(),
+      sharedWithIds: note.sharedWithIds,
+      isPinned: note.isPinned,
+      colorValue: note.colorValue,
+      isCompleted: !note.isCompleted,
     );
     await updateNote(updated);
   }

@@ -103,6 +103,15 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                 context.go('/home/employees');
               },
             ),
+            _QuickAddItem(
+              icon: Icons.work_outline_rounded,
+              label: 'Manage Jobs',
+              color: const Color(0xFF0EA5E9),
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/home/jobs');
+              },
+            ),
             const SizedBox(height: 8),
           ],
         ),

@@ -37,7 +37,7 @@ void main() async {
   // Register adapters
   Hive.registerAdapter(WorkspaceModelAdapter());
   Hive.registerAdapter(ProjectModelAdapter());
-  Hive.registerAdapter(TaskModelAdapter());
+  Hive.registerAdapter(CompatibleTaskModelAdapter());
   Hive.registerAdapter(SubtaskModelAdapter());
   Hive.registerAdapter(NoteModelAdapter());
   Hive.registerAdapter(AppointmentModelAdapter());

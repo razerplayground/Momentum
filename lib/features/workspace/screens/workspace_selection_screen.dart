@@ -49,6 +49,8 @@ class _WorkspaceSelectionScreenState
     final workspaces = ref.watch(workspacesProvider);
     final isGlobalView = ref.watch(globalViewEnabledProvider);
     final authState = ref.watch(authProvider);
+    final canAddWorkspace =
+        ref.read(workspacesProvider.notifier).canAddWorkspace;
 
     return Scaffold(
       key: _scaffoldKey,
@@ -104,7 +106,8 @@ class _WorkspaceSelectionScreenState
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         GestureDetector(
-                          onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+                          onTap: () =>
+                              _scaffoldKey.currentState?.openEndDrawer(),
                           child: Row(
                             children: [
                               Container(
@@ -128,7 +131,8 @@ class _WorkspaceSelectionScreenState
                                   Text(
                                     authState.user != null
                                         ? 'Logged in as ${authState.user!.name}'
-                                        : (AuthService.getSessionEmail().isNotEmpty
+                                        : (AuthService.getSessionEmail()
+                                                .isNotEmpty
                                             ? AuthService.getSessionEmail()
                                             : 'Your businesses, all in one place'),
                                     style: AppTextStyles.bodySmall,
@@ -142,7 +146,8 @@ class _WorkspaceSelectionScreenState
                           tooltip: 'Account Menu',
                           icon: const Icon(Icons.account_circle_outlined,
                               color: AppColors.primary, size: 28),
-                          onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                          onPressed: () =>
+                              _scaffoldKey.currentState?.openEndDrawer(),
                         ),
                       ],
                     ),
@@ -166,7 +171,9 @@ class _WorkspaceSelectionScreenState
                     Expanded(
                       child: RefreshIndicator(
                         onRefresh: () async {
-                          await ref.read(workspacesProvider.notifier).loadWorkspaces();
+                          await ref
+                              .read(workspacesProvider.notifier)
+                              .loadWorkspaces();
                         },
                         child: workspaces.isEmpty
                             ? ListView(
@@ -179,7 +186,8 @@ class _WorkspaceSelectionScreenState
                                     subtitle:
                                         'Create your first business workspace to get started.',
                                     actionLabel: 'Create Workspace',
-                                    onAction: () => _showAddWorkspaceSheet(context),
+                                    onAction: () =>
+                                        _showAddWorkspaceSheet(context),
                                   ),
                                 ],
                               )
@@ -204,8 +212,8 @@ class _WorkspaceSelectionScreenState
                                     },
                                     onEdit: () => _showEditWorkspaceSheet(
                                         context, workspaces[i]),
-                                    onDelete: () =>
-                                        _deleteWorkspace(context, workspaces[i]),
+                                    onDelete: () => _deleteWorkspace(
+                                        context, workspaces[i]),
                                   );
                                 },
                               ),
@@ -215,7 +223,19 @@ class _WorkspaceSelectionScreenState
                     GradientButton(
                       label: 'Add New Business',
                       icon: Icons.add_business_rounded,
-                      onTap: () => _showAddWorkspaceSheet(context),
+                      onTap: () {
+                        if (!canAddWorkspace) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Individual accounts can create one business.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        _showAddWorkspaceSheet(context);
+                      },
                       gradient: AppColors.primaryGradient,
                     ),
                     const SizedBox(height: 24),
@@ -281,17 +301,42 @@ class _WorkspaceSelectionScreenState
                         children: [
                           Text(
                             authUser?.name ?? 'BizPro User',
-                            style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                            style: AppTextStyles.titleMedium
+                                .copyWith(fontWeight: FontWeight.bold),
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Text(
                             authUser?.email ?? email,
-                            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            authUser?.phoneNumber?.isNotEmpty == true
+                                ? authUser!.phoneNumber!
+                                : 'Add phone number',
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: AppColors.textSecondary),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      tooltip: 'Edit account details',
+                      onPressed: () {
+                        showDialog<void>(
+                          context: context,
+                          builder: (context) => _EditAccountDialog(
+                            name: authUser?.name ?? '',
+                            email: authUser?.email ?? email,
+                            phoneNumber: authUser?.phoneNumber ?? '',
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.edit_outlined),
                     ),
                   ],
                 ),
@@ -391,6 +436,117 @@ class _WorkspaceSelectionScreenState
   }
 }
 
+class _EditAccountDialog extends ConsumerStatefulWidget {
+  final String name;
+  final String email;
+  final String phoneNumber;
+
+  const _EditAccountDialog({
+    required this.name,
+    required this.email,
+    required this.phoneNumber,
+  });
+
+  @override
+  ConsumerState<_EditAccountDialog> createState() => _EditAccountDialogState();
+}
+
+class _EditAccountDialogState extends ConsumerState<_EditAccountDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final _nameController = TextEditingController(text: widget.name);
+  late final _emailController = TextEditingController(text: widget.email);
+  late final _phoneController = TextEditingController(text: widget.phoneNumber);
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSaving = true);
+    final success = await ref.read(authProvider.notifier).updateProfile(
+          name: _nameController.text.trim(),
+          phoneNumber: _phoneController.text.trim(),
+        );
+
+    if (!mounted) return;
+    if (success) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() => _isSaving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ref.read(authProvider).errorMessage ?? 'Unable to update account.',
+        ),
+        backgroundColor: AppColors.error,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Account Details'),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                enabled: !_isSaving,
+                decoration: const InputDecoration(labelText: 'Name'),
+                validator: (value) =>
+                    (value ?? '').trim().isEmpty ? 'Name is required.' : null,
+              ),
+              TextFormField(
+                controller: _emailController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  helperText: 'Email changes are not supported here.',
+                ),
+              ),
+              TextFormField(
+                controller: _phoneController,
+                enabled: !_isSaving,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Phone number'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _isSaving ? null : _save,
+          child: _isSaving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
 class _EditWorkspaceSheet extends ConsumerStatefulWidget {
   final WorkspaceModel workspace;
 
@@ -409,7 +565,18 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
   late String _selectedIndustry;
   bool _isSaving = false;
 
-  final List<String> _emojis = ['🏢', '🏗️', '🛒', '💻', '🏥', '🍕', '🎓', '✈️', '🏦', '🎨'];
+  final List<String> _emojis = [
+    '🏢',
+    '🏗️',
+    '🛒',
+    '💻',
+    '🏥',
+    '🍕',
+    '🎓',
+    '✈️',
+    '🏦',
+    '🎨'
+  ];
   final List<String> _industries = [
     'General',
     'Construction',
@@ -553,7 +720,8 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
                     .toList(),
                 onChanged: _isSaving
                     ? null
-                    : (val) => setState(() => _selectedIndustry = val ?? 'General'),
+                    : (val) =>
+                        setState(() => _selectedIndustry = val ?? 'General'),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -568,7 +736,8 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
               ),
               const SizedBox(height: 24),
               if (_isSaving)
-                const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary))
               else
                 GradientButton(
                   label: 'Save Changes',
@@ -582,11 +751,14 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
                       name: name,
                       description: _descController.text.trim(),
                       emoji: _selectedEmoji,
-                      colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
+                      colorValue:
+                          AppColors.workspaceColors[_selectedColorIndex].value,
                       industry: _selectedIndustry,
                     );
 
-                    await ref.read(workspacesProvider.notifier).updateWorkspace(updated);
+                    await ref
+                        .read(workspacesProvider.notifier)
+                        .updateWorkspace(updated);
 
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
@@ -660,7 +832,8 @@ class _GlobalViewCard extends StatelessWidget {
                   Text(
                     'Global View',
                     style: AppTextStyles.bodySmall.copyWith(
-                      color: isSelected ? Colors.white70 : AppColors.textSecondary,
+                      color:
+                          isSelected ? Colors.white70 : AppColors.textSecondary,
                     ),
                   ),
                 ],
@@ -832,7 +1005,18 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
   String _selectedIndustry = 'General';
   bool _isCreating = false;
 
-  final List<String> _emojis = ['🏢', '🏗️', '🛒', '💻', '🏥', '🍕', '🎓', '✈️', '🏦', '🎨'];
+  final List<String> _emojis = [
+    '🏢',
+    '🏗️',
+    '🛒',
+    '💻',
+    '🏥',
+    '🍕',
+    '🎓',
+    '✈️',
+    '🏦',
+    '🎨'
+  ];
   final List<String> _industries = [
     'General',
     'Construction',
@@ -869,7 +1053,8 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                 ),
               ),
               const SizedBox(height: 20),
-              Text('New Business Workspace', style: AppTextStyles.headlineSmall),
+              Text('New Business Workspace',
+                  style: AppTextStyles.headlineSmall),
               const SizedBox(height: 20),
               Text('Choose Icon', style: AppTextStyles.labelLarge),
               const SizedBox(height: 10),
@@ -948,12 +1133,13 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                       Icon(Icons.category_rounded, color: AppColors.primary),
                 ),
                 items: _industries
-                    .map((ind) =>
-                        DropdownMenuItem(value: ind, child: Text(ind)))
+                    .map(
+                        (ind) => DropdownMenuItem(value: ind, child: Text(ind)))
                     .toList(),
                 onChanged: _isCreating
                     ? null
-                    : (val) => setState(() => _selectedIndustry = val ?? 'General'),
+                    : (val) =>
+                        setState(() => _selectedIndustry = val ?? 'General'),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -978,18 +1164,31 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                     final name = _nameController.text.trim();
                     if (name.isEmpty) return;
 
+                    final notifier = ref.read(workspacesProvider.notifier);
+                    if (!notifier.canAddWorkspace) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Individual accounts can create one business.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+
                     setState(() => _isCreating = true);
 
                     final workspace = WorkspaceModel.create(
                       name: name,
-                      colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
+                      colorValue:
+                          AppColors.workspaceColors[_selectedColorIndex].value,
                       emoji: _selectedEmoji,
                       description: _descController.text.trim(),
                       industry: _selectedIndustry,
                       ownerEmail: AuthService.getSessionEmail(),
                     );
 
-                    await ref.read(workspacesProvider.notifier).addWorkspace(workspace);
+                    await notifier.addWorkspace(workspace);
 
                     if (!context.mounted) return;
                     Navigator.of(context).pop();

@@ -40,6 +40,9 @@ class NoteModel extends HiveObject {
   @HiveField(11)
   int colorValue;
 
+  @HiveField(12, defaultValue: false)
+  bool isCompleted;
+
   NoteModel({
     required this.id,
     required this.workspaceId,
@@ -53,6 +56,7 @@ class NoteModel extends HiveObject {
     this.sharedWithIds = const [],
     this.isPinned = false,
     this.colorValue = 0xFFEDE9FE,
+    this.isCompleted = false,
   });
 
   factory NoteModel.create({

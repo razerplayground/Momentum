@@ -9,6 +9,7 @@ import '../../../data/models/project_model.dart';
 import '../../../data/providers/employee_provider.dart';
 import '../../../data/providers/other_providers.dart';
 import '../../../data/providers/project_provider.dart';
+import '../../../data/providers/project_progress_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
 import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/priority_chip.dart';
@@ -123,6 +124,7 @@ class _ProjectsScreenState extends ConsumerState<ProjectsScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'projectsScreenFab',
         onPressed: () => _showAddProject(context, ref),
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add_rounded, color: Colors.white),
@@ -248,7 +250,7 @@ class _StripStat extends StatelessWidget {
   }
 }
 
-class _ProjectListCard extends StatelessWidget {
+class _ProjectListCard extends ConsumerWidget {
   final ProjectModel project;
   final List<ExpenseModel> expenses;
   final VoidCallback onTap;
@@ -257,7 +259,8 @@ class _ProjectListCard extends StatelessWidget {
       {required this.project, required this.expenses, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progress = ref.watch(projectProgressProvider(project.id));
     final income = expenses
         .where((expense) => expense.isIncome)
         .fold(0.0, (sum, expense) => sum + expense.amount);
@@ -340,7 +343,7 @@ class _ProjectListCard extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: project.progress,
+                    value: progress.value,
                     backgroundColor: AppColors.borderLight,
                     valueColor: AlwaysStoppedAnimation<Color>(
                         Color(project.colorValue)),
@@ -349,7 +352,7 @@ class _ProjectListCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Text('${(project.progress * 100).toInt()}%',
+              Text('${(progress.value * 100).round()}%',
                   style: AppTextStyles.labelSmall.copyWith(
                       color: Color(project.colorValue),
                       fontWeight: FontWeight.w700)),

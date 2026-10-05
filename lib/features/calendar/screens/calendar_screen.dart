@@ -219,6 +219,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'calendarScreenFab',
         onPressed: () => _showAddAppointment(context),
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add_rounded, color: Colors.white),

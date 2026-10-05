@@ -39,8 +39,7 @@ class ExpensesScreen extends ConsumerWidget {
               ),
               confirmDismiss: (_) => _confirmDelete(context),
               onDismissed: (_) async {
-                await e.delete();
-                ref.invalidate(projectExpensesProvider(projectId));
+                await ref.read(expensesProvider.notifier).delete(e.id);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Transaction deleted')),
@@ -71,6 +70,13 @@ class ExpensesScreen extends ConsumerWidget {
                               : AppColors.accentRed,
                           fontWeight: FontWeight.w700,
                         ),
+                      ),
+                      Checkbox(
+                        value: e.isCompleted,
+                        onChanged: (_) => ref
+                            .read(expensesProvider.notifier)
+                            .toggleCompletion(e.id),
+                        activeColor: AppColors.primary,
                       ),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert_rounded, size: 20),
@@ -134,8 +140,7 @@ class ExpensesScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, ExpenseModel expense) async {
     final confirmed = await _confirmDelete(context);
     if (!confirmed) return;
-    await expense.delete();
-    ref.invalidate(projectExpensesProvider(projectId));
+    await ref.read(expensesProvider.notifier).delete(expense.id);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transaction deleted')),
@@ -175,8 +180,8 @@ class _EditExpenseSheetState extends ConsumerState<_EditExpenseSheet> {
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.expense.title);
-    _amountController = TextEditingController(
-        text: widget.expense.amount.toStringAsFixed(0));
+    _amountController =
+        TextEditingController(text: widget.expense.amount.toStringAsFixed(0));
     _date = widget.expense.date;
     _isIncome = widget.expense.isIncome;
   }
@@ -244,9 +249,8 @@ class _EditExpenseSheetState extends ConsumerState<_EditExpenseSheet> {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _titleController,
-                  validator: (value) => (value ?? '').trim().isEmpty
-                      ? 'Title is required'
-                      : null,
+                  validator: (value) =>
+                      (value ?? '').trim().isEmpty ? 'Title is required' : null,
                   decoration: const InputDecoration(labelText: 'Title *'),
                 ),
                 const SizedBox(height: 12),
@@ -283,8 +287,7 @@ class _EditExpenseSheetState extends ConsumerState<_EditExpenseSheet> {
                         ..date = _date
                         ..typeStr = _isIncome ? 'income' : 'expense';
                       await expense.save();
-                      ref.invalidate(
-                          projectExpensesProvider(widget.projectId));
+                      ref.invalidate(projectExpensesProvider(widget.projectId));
                       if (context.mounted) Navigator.pop(context);
                     },
                     child: const Text('Save Changes'),

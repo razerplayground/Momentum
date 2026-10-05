@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_model.dart';
 import '../services/api_service.dart';
+import '../../features/auth/auth_service.dart';
 
 class AuthState {
   final UserModel? user;
@@ -70,6 +71,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       // If saved user exists, keep offline logged-in state unless 401 error
       if (e is ApiException && e.statusCode == 401) {
+        await AuthService.logout();
         state = state.copyWith(
           isAuthenticated: false,
           user: null,
@@ -100,7 +102,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       return true;
     } catch (e) {
-      final msg = e is ApiException ? e.message : 'Login failed. Please try again.';
+      final msg =
+          e is ApiException ? e.message : 'Login failed. Please try again.';
       state = state.copyWith(
         isLoading: false,
         errorMessage: msg,
@@ -128,9 +131,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
 
       // Auto login after successful signup
-      return await login(email: email, password: password);
+      final loggedIn = await login(email: email, password: password);
+      if (!loggedIn) return false;
+
+      final loggedInUser = state.user;
+      if (loggedInUser != null) {
+        final signupUser = loggedInUser.copyWith(
+          plan: plan,
+          organizationName: organizationName,
+        );
+        await _apiService.saveUserData(signupUser);
+        state = state.copyWith(user: signupUser);
+      }
+      return true;
     } catch (e) {
-      final msg = e is ApiException ? e.message : 'Signup failed. Please try again.';
+      final msg =
+          e is ApiException ? e.message : 'Signup failed. Please try again.';
       state = state.copyWith(
         isLoading: false,
         errorMessage: msg,
@@ -139,11 +155,35 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<bool> updateProfile({
+    required String name,
+    String? phoneNumber,
+  }) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final user = await _apiService.updateMe(
+        name: name,
+        phoneNumber: phoneNumber,
+      );
+      await AuthService.setSessionEmail(user.email, name: user.name);
+      state = state.copyWith(user: user, isLoading: false);
+      return true;
+    } catch (e) {
+      final msg = e is ApiException
+          ? e.message
+          : 'Unable to update your account. Please try again.';
+      state = state.copyWith(isLoading: false, errorMessage: msg);
+      return false;
+    }
+  }
+
   /// Logout current user
   Future<void> logout() async {
     state = state.copyWith(isLoading: true);
     await _apiService.logout();
-    state = const AuthState(isAuthenticated: false, user: null, isLoading: false);
+    await AuthService.logout();
+    state =
+        const AuthState(isAuthenticated: false, user: null, isLoading: false);
   }
 
   /// Clear any error message

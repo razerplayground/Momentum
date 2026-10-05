@@ -276,6 +276,21 @@ class ExpenseNotifier extends StateNotifier<List<ExpenseModel>> {
     state = [...state, e];
   }
 
+  Future<void> update(ExpenseModel expense) async {
+    final box = Hive.box<ExpenseModel>(AppConstants.expenseBox);
+    await box.put(expense.id, expense);
+    state = state
+        .map((item) => item.id == expense.id ? expense : item)
+        .toList();
+  }
+
+  Future<void> toggleCompletion(String id) async {
+    final expense = state.firstWhere((expense) => expense.id == id);
+    expense.isCompleted = !expense.isCompleted;
+    await expense.save();
+    state = state.map((item) => item.id == id ? expense : item).toList();
+  }
+
   Future<void> delete(String id) async {
     final box = Hive.box<ExpenseModel>(AppConstants.expenseBox);
     await box.delete(id);

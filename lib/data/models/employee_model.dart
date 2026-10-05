@@ -2,7 +2,8 @@ import 'package:hive/hive.dart';
 
 part 'employee_model.g.dart';
 
-enum EmployeeStatus { active, inactive, onLeave }
+enum EmployeeStatus { active, busy, inactive, onLeave }
+
 enum EmployeeRole { manager, developer, designer, sales, hr, accountant, other }
 
 @HiveType(typeId: 6)
@@ -70,13 +71,12 @@ class EmployeeModel extends HiveObject {
     this.avatarColorValue = 0xFF7C3AED,
   });
 
-  EmployeeStatus get status => EmployeeStatus.values.firstWhere(
-      (e) => e.name == statusStr,
-      orElse: () => EmployeeStatus.active);
+  EmployeeStatus get status =>
+      EmployeeStatus.values.firstWhere((e) => e.name == statusStr,
+          orElse: () => EmployeeStatus.active);
 
-  EmployeeRole get role => EmployeeRole.values.firstWhere(
-      (e) => e.name == roleStr,
-      orElse: () => EmployeeRole.other);
+  EmployeeRole get role => EmployeeRole.values
+      .firstWhere((e) => e.name == roleStr, orElse: () => EmployeeRole.other);
 
   String get initials {
     final parts = name.trim().split(' ');
@@ -110,4 +110,62 @@ class EmployeeModel extends HiveObject {
       avatarColorValue: avatarColorValue,
     );
   }
+
+  factory EmployeeModel.fromApiJson(
+    Map<String, dynamic> json, {
+    required String workspaceId,
+  }) {
+    final rawId = json['id'] ?? json['_id'];
+    if (rawId == null) {
+      throw const FormatException('Employee response is missing an id');
+    }
+
+    final rawUser = json['user'];
+    final user =
+        rawUser is Map<String, dynamic> ? rawUser : const <String, dynamic>{};
+    final rawName = (json['name'] ?? user['name'])?.toString() ??
+        '${json['firstName'] ?? ''} ${json['lastName'] ?? ''}'.trim();
+    final createdAt = DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+        DateTime.now();
+    final joinedAt =
+        DateTime.tryParse(json['joinedAt']?.toString() ?? '') ?? createdAt;
+    final rawProjects = json['projectIds'] ?? json['projects'];
+
+    return EmployeeModel(
+      id: rawId.toString(),
+      workspaceId:
+          (json['workspaceId'] ?? json['businessId'] ?? workspaceId).toString(),
+      name: rawName.isEmpty ? 'Employee' : rawName,
+      email: (json['email'] ?? user['email'])?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      roleStr: (json['title'] ?? json['role'] ?? json['roleStr'] ?? 'other')
+          .toString(),
+      statusStr: (json['status'] ?? json['statusStr'] ?? 'active').toString(),
+      department: json['department']?.toString() ?? 'General',
+      joinedAt: joinedAt,
+      createdAt: createdAt,
+      avatarUrl: json['avatarUrl']?.toString(),
+      salary: (json['salary'] as num?)?.toDouble() ?? 0,
+      projectIds: rawProjects is List
+          ? rawProjects.map((value) => value.toString()).toList()
+          : const [],
+      notes: json['notes']?.toString(),
+      avatarColorValue: 0xFF7C3AED,
+    );
+  }
+
+  Map<String, dynamic> toApiCreateJson() => {
+        'name': name,
+        'email': email,
+        'title': roleStr,
+        'status': statusStr,
+        'department': department,
+      };
+
+  Map<String, dynamic> toApiUpdateJson() => {
+        'title': roleStr,
+        'status': statusStr,
+        'department': department,
+        'salary': salary,
+      };
 }

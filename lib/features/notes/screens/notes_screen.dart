@@ -234,6 +234,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     note: filteredNotes[i],
                     onTap: () =>
                         context.go('/home/notes/${filteredNotes[i].id}'),
+                    onToggleCompletion: () => ref
+                        .read(notesProvider.notifier)
+                        .toggleCompletion(filteredNotes[i].id),
                   ),
                 ),
                 childCount: filteredNotes.length,
@@ -243,6 +246,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'notesScreenFab',
         onPressed: () => _showAddNote(context, ref),
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.edit_rounded, color: Colors.white),
@@ -294,8 +298,13 @@ class _BrowseItem extends StatelessWidget {
 class _NoteCard extends StatelessWidget {
   final NoteModel note;
   final VoidCallback onTap;
+  final VoidCallback onToggleCompletion;
 
-  const _NoteCard({required this.note, required this.onTap});
+  const _NoteCard({
+    required this.note,
+    required this.onTap,
+    required this.onToggleCompletion,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -306,11 +315,22 @@ class _NoteCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title with emoji
-          Text(
-            note.isPinned ? '📌 ${note.title}' : note.title,
-            style: AppTextStyles.titleLarge,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  note.isPinned ? '📌 ${note.title}' : note.title,
+                  style: AppTextStyles.titleLarge,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Checkbox(
+                value: note.isCompleted,
+                onChanged: (_) => onToggleCompletion(),
+                activeColor: AppColors.primary,
+              ),
+            ],
           ),
           if (note.content.isNotEmpty) ...[
             const SizedBox(height: 6),

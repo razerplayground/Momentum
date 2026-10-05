@@ -29,7 +29,7 @@ class ApiConstants {
   static const String refresh = '/v1/auth/refresh';
   static const String logout = '/v1/auth/logout';
   static const String forgotPassword = '/v1/auth/forgot-password';
-  static const String resetPassword = '/v1/auth/reset-password';
+  static const String resetPassword = '/v1/auth/reset-password';  
   static const String revokeAll = '/v1/auth/revoke-all';
 
   // Users

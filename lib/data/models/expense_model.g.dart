@@ -26,13 +26,14 @@ class ExpenseModelAdapter extends TypeAdapter<ExpenseModel> {
       createdAt: fields[9] as DateTime,
       receiptUrl: fields[10] as String?,
       addedById: fields[11] as String?,
+      isCompleted: fields[12] == null ? false : fields[12] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, ExpenseModel obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -56,7 +57,9 @@ class ExpenseModelAdapter extends TypeAdapter<ExpenseModel> {
       ..writeByte(10)
       ..write(obj.receiptUrl)
       ..writeByte(11)
-      ..write(obj.addedById);
+      ..write(obj.addedById)
+      ..writeByte(12)
+      ..write(obj.isCompleted);
   }
 
   @override
