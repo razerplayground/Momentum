@@ -40,80 +40,128 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
   }
 
   void _showQuickAdd() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+          ),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Quick Add',
+                      style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 16),
+                  _QuickAddItem(
+                    icon: Icons.folder_rounded,
+                    label: 'New Project',
+                    color: const Color(0xFF7C3AED),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/projects');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.task_alt_rounded,
+                    label: 'New Task',
+                    color: const Color(0xFF3B82F6),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/tasks');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.sticky_note_2_rounded,
+                    label: 'New Note',
+                    color: const Color(0xFF22C55E),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/notes');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.event_rounded,
+                    label: 'New Appointment',
+                    color: const Color(0xFFF59E0B),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/calendar');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.people_rounded,
+                    label: 'Add Employee',
+                    color: const Color(0xFFEC4899),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/employees');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.work_outline_rounded,
+                    label: 'Manage Jobs',
+                    color: const Color(0xFF0EA5E9),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/jobs');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.payments_rounded,
+                    label: 'Manage Payroll',
+                    color: const Color(0xFF22C55E),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/payroll');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.analytics_outlined,
+                    label: 'View Reports',
+                    color: const Color(0xFF8B5CF6),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/reports');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.cloud_upload_outlined,
+                    label: 'File Storage',
+                    color: const Color(0xFF0F766E),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/storage');
+                    },
+                  ),
+                  _QuickAddItem(
+                    icon: Icons.history_rounded,
+                    label: 'Activity & Exports',
+                    color: const Color(0xFF475569),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/home/activity');
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
             ),
-            const SizedBox(height: 20),
-            Text('Quick Add', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 16),
-            _QuickAddItem(
-              icon: Icons.folder_rounded,
-              label: 'New Project',
-              color: const Color(0xFF7C3AED),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/home/projects');
-              },
-            ),
-            _QuickAddItem(
-              icon: Icons.task_alt_rounded,
-              label: 'New Task',
-              color: const Color(0xFF3B82F6),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/home/tasks');
-              },
-            ),
-            _QuickAddItem(
-              icon: Icons.sticky_note_2_rounded,
-              label: 'New Note',
-              color: const Color(0xFF22C55E),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/home/notes');
-              },
-            ),
-            _QuickAddItem(
-              icon: Icons.event_rounded,
-              label: 'New Appointment',
-              color: const Color(0xFFF59E0B),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/home/calendar');
-              },
-            ),
-            _QuickAddItem(
-              icon: Icons.people_rounded,
-              label: 'Add Employee',
-              color: const Color(0xFFEC4899),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/home/employees');
-              },
-            ),
-            _QuickAddItem(
-              icon: Icons.work_outline_rounded,
-              label: 'Manage Jobs',
-              color: const Color(0xFF0EA5E9),
-              onTap: () {
-                Navigator.pop(context);
-                context.go('/home/jobs');
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );

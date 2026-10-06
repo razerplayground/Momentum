@@ -152,19 +152,19 @@ class JobsScreen extends ConsumerWidget {
         initialBusinessId:
             job?.businessId ?? initialBusinessId ?? workspaces.first.id,
         job: job,
-        onSave: (businessId, title, description, status) async {
+        onSave: (businessId, title, department, status) async {
           if (job == null) {
             await ref.read(jobsProvider.notifier).addJob(
                   businessId: businessId,
                   title: title,
-                  description: description,
+                  department: department,
                   status: status,
                 );
           } else {
             await ref.read(jobsProvider.notifier).updateJob(
                   job,
                   title: title,
-                  description: description,
+                  department: department,
                   status: status,
                 );
           }
@@ -237,9 +237,9 @@ class _JobCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(job.title, style: AppTextStyles.titleMedium),
-                if (job.description.isNotEmpty) ...[
+                if (job.department.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(job.description, style: AppTextStyles.bodySmall),
+                  Text(job.department, style: AppTextStyles.bodySmall),
                 ],
                 const SizedBox(height: 6),
                 Text(
@@ -273,7 +273,7 @@ class _JobEditorSheet extends StatefulWidget {
   final Future<void> Function(
     String businessId,
     String title,
-    String description,
+    String department,
     String status,
   ) onSave;
 
@@ -290,28 +290,28 @@ class _JobEditorSheet extends StatefulWidget {
 
 class _JobEditorSheetState extends State<_JobEditorSheet> {
   late final TextEditingController _titleController;
-  late final TextEditingController _descriptionController;
+  late final TextEditingController _departmentController;
   late String _businessId;
   late String _status;
   bool _saving = false;
 
-  static const _statuses = ['pending', 'in_progress', 'completed'];
+  static const _statuses = ['open', 'closed'];
 
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.job?.title ?? '');
-    _descriptionController =
-        TextEditingController(text: widget.job?.description ?? '');
+    _departmentController =
+        TextEditingController(text: widget.job?.department ?? '');
     _businessId = widget.initialBusinessId;
-    final existingStatus = widget.job?.status ?? 'pending';
-    _status = _statuses.contains(existingStatus) ? existingStatus : 'pending';
+    final existingStatus = widget.job?.status ?? 'open';
+    _status = _statuses.contains(existingStatus) ? existingStatus : 'open';
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _descriptionController.dispose();
+    _departmentController.dispose();
     super.dispose();
   }
 
@@ -330,7 +330,7 @@ class _JobEditorSheetState extends State<_JobEditorSheet> {
                   style: AppTextStyles.headlineSmall),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _businessId,
+                initialValue: _businessId,
                 decoration: const InputDecoration(labelText: 'Business'),
                 items: widget.workspaces
                     .map((workspace) => DropdownMenuItem(
@@ -351,13 +351,12 @@ class _JobEditorSheetState extends State<_JobEditorSheet> {
               ),
               const SizedBox(height: 12),
               TextField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Description'),
+                controller: _departmentController,
+                decoration: const InputDecoration(labelText: 'Department'),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _status,
+                initialValue: _status,
                 decoration: const InputDecoration(labelText: 'Status'),
                 items: _statuses
                     .map((status) => DropdownMenuItem(
@@ -392,13 +391,20 @@ class _JobEditorSheetState extends State<_JobEditorSheet> {
       );
       return;
     }
+    final department = _departmentController.text.trim();
+    if (department.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Department is required')),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
     try {
       await widget.onSave(
         _businessId,
         title,
-        _descriptionController.text.trim(),
+        department,
         _status,
       );
       if (mounted) Navigator.pop(context);

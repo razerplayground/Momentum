@@ -1752,6 +1752,8 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final industryOptions = {..._industries, _selectedIndustry};
+
     return Padding(
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -1846,7 +1848,7 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
                   prefixIcon:
                       Icon(Icons.category_rounded, color: AppColors.primary),
                 ),
-                items: _industries
+                items: industryOptions
                     .map(
                         (ind) => DropdownMenuItem(value: ind, child: Text(ind)))
                     .toList(),

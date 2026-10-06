@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:bussiness_management/core/constants/app_constants.dart';
+import 'package:bussiness_management/data/models/user_model.dart';
 import 'package:bussiness_management/data/services/api_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -107,7 +109,7 @@ void main() {
             jsonEncode({
               'statusCode': 403,
               'message':
-                  'This business is on the Individual plan — upgrade to Organization to add employees',
+                  'This business is on the Individual plan â€” upgrade to Organization to add employees',
               'error': 'Forbidden',
             }),
             403,
@@ -128,10 +130,75 @@ void main() {
             .having(
               (error) => error.message,
               'message',
-              'This business is on the Individual plan — upgrade to Organization to add employees',
+              'This business is on the Individual plan â€” upgrade to Organization to add employees',
             ),
       ),
     );
+  });
+
+  test('preserves saved organization plan when profile omits it', () async {
+    final service = ApiService(
+      client: MockClient((_) async => http.Response(
+            jsonEncode({
+              'id': 'user-1',
+              'email': 'jane@example.com',
+              'name': 'Jane Doe',
+            }),
+            200,
+          )),
+    );
+    await service.saveUserData(UserModel(
+      id: 'user-1',
+      email: 'jane@example.com',
+      name: 'Jane Doe',
+      plan: 'organization',
+      organizationName: 'Example Organization',
+    ));
+
+    final user = await service.getMe();
+
+    expect(user.plan, 'organization');
+    expect(user.organizationName, 'Example Organization');
+    expect(service.getSavedUserData()?.plan, 'organization');
+  });
+
+  test('creates additional businesses through the businesses endpoint',
+      () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'business': {
+                'id': 'business-2',
+                'name': 'Second Business',
+                'industry': 'Technology',
+                'address': 'Office address',
+              },
+            },
+          }),
+          201,
+        );
+      }),
+    );
+
+    final business = await service.createWorkspace(
+      name: 'Second Business',
+      industry: 'Technology',
+      description: 'Office address',
+    );
+
+    expect(capturedRequest?.method, 'POST');
+    expect(capturedRequest?.url.path, '/v1/businesses');
+    expect(jsonDecode(capturedRequest!.body), {
+      'name': 'Second Business',
+      'industry': 'Technology',
+      'address': 'Office address',
+    });
+    expect(business.id, 'business-2');
+    expect(business.name, 'Second Business');
   });
 
   test('updates an employee with PATCH and the saved bearer token', () async {
@@ -212,7 +279,7 @@ void main() {
     expect(capturedRequest?.url.path, '/v1/businesses/business-1/jobs');
   });
 
-  test('creates a job with title description and status', () async {
+  test('creates a job using the API required fields', () async {
     http.Request? capturedRequest;
     final service = ApiService(
       client: MockClient((request) async {
@@ -222,8 +289,8 @@ void main() {
             'job': {
               'id': 'job-1',
               'title': 'Site work',
-              'description': 'Prepare the site',
-              'status': 'pending',
+              'department': 'Construction',
+              'status': 'open',
             }
           }),
           201,
@@ -234,8 +301,8 @@ void main() {
 
     final job = await service.createJob('business-1', {
       'title': 'Site work',
-      'description': 'Prepare the site',
-      'status': 'pending',
+      'department': 'Construction',
+      'status': 'open',
     });
 
     expect(job['id'], 'job-1');
@@ -246,10 +313,46 @@ void main() {
       jsonDecode(capturedRequest!.body),
       {
         'title': 'Site work',
-        'description': 'Prepare the site',
-        'status': 'pending',
+        'department': 'Construction',
+        'status': 'open',
       },
     );
+  });
+
+  test('loads the created job when create returns no job object', () async {
+    final requests = <String>[];
+    final service = ApiService(
+      client: MockClient((request) async {
+        requests.add(request.method);
+        if (request.method == 'POST') {
+          return http.Response(jsonEncode({'message': 'Job created'}), 201);
+        }
+        return http.Response(
+          jsonEncode({
+            'data': {
+              'jobs': [
+                {
+                  'id': 'job-2',
+                  'title': 'Site work',
+                  'department': 'Construction',
+                  'status': 'open',
+                }
+              ],
+            },
+          }),
+          200,
+        );
+      }),
+    );
+
+    final job = await service.createJob('business-1', {
+      'title': 'Site work',
+      'department': 'Construction',
+      'status': 'open',
+    });
+
+    expect(requests, ['POST', 'GET']);
+    expect(job['id'], 'job-2');
   });
 
   test('updates a job with PATCH', () async {
@@ -261,14 +364,14 @@ void main() {
       }),
     );
 
-    await service.updateJob('business-1', 'job-1', {'status': 'completed'});
+    await service.updateJob('business-1', 'job-1', {'status': 'closed'});
 
     expect(capturedRequest?.method, 'PATCH');
     expect(
       capturedRequest?.url.path,
       '/v1/businesses/business-1/jobs/job-1',
     );
-    expect(jsonDecode(capturedRequest!.body), {'status': 'completed'});
+    expect(jsonDecode(capturedRequest!.body), {'status': 'closed'});
   });
 
   test('deletes a job with DELETE', () async {
@@ -403,5 +506,196 @@ void main() {
       capturedRequest?.url.path,
       '/v1/businesses/business-1/payroll/entry-1',
     );
+  });
+
+  test('gets organization report overview', () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response(
+          jsonEncode({'businessCount': 2, 'totalProjects': 5}),
+          200,
+        );
+      }),
+    );
+
+    final report = await service.getOrganizationReportOverview();
+
+    expect(report['businessCount'], 2);
+    expect(capturedRequest?.method, 'GET');
+    expect(capturedRequest?.url.path, '/v1/reports/overview');
+  });
+
+  test('gets a business report overview', () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response(jsonEncode({'projectCount': 3}), 200);
+      }),
+    );
+
+    final report = await service.getBusinessReport('business-1');
+
+    expect(report['projectCount'], 3);
+    expect(capturedRequest?.method, 'GET');
+    expect(
+      capturedRequest?.url.path,
+      '/v1/businesses/business-1/reports',
+    );
+  });
+
+  test('gets financial trend for a business', () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response(
+          jsonEncode([
+            {'month': '2026-01', 'income': 5000, 'expense': 2000}
+          ]),
+          200,
+        );
+      }),
+    );
+
+    final trend = await service.getFinancialTrend('business-1');
+
+    expect(trend.single['income'], 5000);
+    expect(capturedRequest?.method, 'GET');
+    expect(
+      capturedRequest?.url.path,
+      '/v1/businesses/business-1/reports/financial-trend',
+    );
+  });
+
+  test('gets project analytics for a business', () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response(
+          jsonEncode({
+            'projects': 4,
+            'tasks': {'completed': 8, 'pending': 2},
+          }),
+          200,
+        );
+      }),
+    );
+
+    final analytics = await service.getProjectAnalytics('business-1');
+
+    expect(analytics['projects'], 4);
+    expect(capturedRequest?.method, 'GET');
+    expect(
+      capturedRequest?.url.path,
+      '/v1/businesses/business-1/reports/project-analytics',
+    );
+  });
+
+  test('gets audit logs for a business', () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response(
+          jsonEncode([
+            {'id': 'audit-1', 'action': 'employee.created'}
+          ]),
+          200,
+        );
+      }),
+    );
+    await service.saveTokens(access: 'test-access-token');
+
+    final logs = await service.getAuditLogs('business-1');
+
+    expect(logs.single['action'], 'employee.created');
+    expect(capturedRequest?.method, 'GET');
+    expect(
+      capturedRequest?.url.path,
+      '/v1/businesses/business-1/audit-logs',
+    );
+    expect(capturedRequest?.headers['authorization'], startsWith('Bearer '));
+  });
+
+  test('exports business records as CSV', () async {
+    final requestedPaths = <String>[];
+    final service = ApiService(
+      client: MockClient((request) async {
+        requestedPaths.add(request.url.path);
+        return http.Response('id,name\nrecord-1,Example\n', 200);
+      }),
+    );
+    await service.saveTokens(access: 'test-access-token');
+
+    final finances = await service.exportFinances('business-1');
+    final payroll = await service.exportPayroll('business-1');
+    final employees = await service.exportEmployees('business-1');
+
+    expect(finances, 'id,name\nrecord-1,Example\n');
+    expect(payroll, 'id,name\nrecord-1,Example\n');
+    expect(employees, 'id,name\nrecord-1,Example\n');
+    expect(requestedPaths, [
+      '/v1/businesses/business-1/exports/finances',
+      '/v1/businesses/business-1/exports/payroll',
+      '/v1/businesses/business-1/exports/employees',
+    ]);
+  });
+
+  test('uploads a file as authenticated multipart form data', () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response(
+          jsonEncode({
+            'file': {'filename': 'stored-receipt.png'}
+          }),
+          201,
+        );
+      }),
+    );
+    await service.saveTokens(access: 'test-access-token');
+
+    final response = await service.uploadStorageFile(
+      'receipt.png',
+      Uint8List.fromList([1, 2, 3]),
+    );
+
+    expect(response['file']['filename'], 'stored-receipt.png');
+    expect(capturedRequest?.method, 'POST');
+    expect(capturedRequest?.url.path, '/v1/storage/upload');
+    expect(capturedRequest?.headers['authorization'], 'Bearer test-access-token');
+    expect(
+      capturedRequest?.headers['content-type'],
+      startsWith('multipart/form-data; boundary='),
+    );
+    expect(capturedRequest?.body, contains('filename="receipt.png"'));
+    expect(capturedRequest?.body, contains('name="file"'));
+  });
+
+  test('downloads stored file bytes with an authenticated request', () async {
+    http.Request? capturedRequest;
+    final service = ApiService(
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response.bytes([0, 1, 2, 255], 200);
+      }),
+    );
+    await service.saveTokens(access: 'test-access-token');
+
+    final bytes = await service.downloadStorageFile('receipt #1.png');
+
+    expect(bytes, [0, 1, 2, 255]);
+    expect(capturedRequest?.method, 'GET');
+    expect(
+      capturedRequest?.url.toString(),
+      endsWith('/v1/storage/files/receipt%20%231.png'),
+    );
+    expect(capturedRequest?.headers['authorization'], 'Bearer test-access-token');
+    expect(capturedRequest?.headers['accept'], '*/*');
   });
 }

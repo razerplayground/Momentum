@@ -35,7 +35,7 @@ class ApiService {
 
   ApiService({http.Client? client}) : _client = client ?? http.Client();
 
-  // ─── Token Management Helpers ─────────────────────────────────────
+  // â”€â”€â”€ Token Management Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Box get _settingsBox => Hive.box(AppConstants.settingsBox);
 
@@ -89,7 +89,7 @@ class ApiService {
     return uri;
   }
 
-  // ─── Core HTTP Handler with Automatic Token Refresh ──────────────
+  // â”€â”€â”€ Core HTTP Handler with Automatic Token Refresh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Future<dynamic> _sendRequest(
     String method,
@@ -252,13 +252,14 @@ class ApiService {
           {dynamic body, bool requiresAuth = true}) =>
       _sendRequest('DELETE', endpoint, body: body, requiresAuth: requiresAuth);
 
-  // ─── AUTH SERVICES ───────────────────────────────────────────────
+  // â”€â”€â”€ AUTH SERVICES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Login user with email & password
   Future<Map<String, dynamic>> login({
     required String email,
     required String password,
   }) async {
+    final savedUser = getSavedUserData();
     final response = await post(
       ApiConstants.login,
       body: {'email': email, 'password': password},
@@ -275,7 +276,10 @@ class ApiService {
       UserModel? user;
       if (response.containsKey('user') &&
           response['user'] is Map<String, dynamic>) {
-        user = UserModel.fromJson(response['user'] as Map<String, dynamic>);
+        user = _preserveSavedPlan(
+          UserModel.fromJson(response['user'] as Map<String, dynamic>),
+          savedUser,
+        );
         await saveUserData(user);
       } else {
         // Fetch current user details if not returned directly in login
@@ -339,7 +343,10 @@ class ApiService {
   Future<UserModel> getMe() async {
     final res = await get(ApiConstants.me, requiresAuth: true);
     if (res is Map<String, dynamic>) {
-      final user = UserModel.fromJson(res);
+      final user = _preserveSavedPlan(
+        UserModel.fromJson(res),
+        getSavedUserData(),
+      );
       await saveUserData(user);
       return user;
     }
@@ -356,7 +363,10 @@ class ApiService {
 
     final res = await patch(ApiConstants.me, body: body, requiresAuth: true);
     if (res is Map<String, dynamic>) {
-      final user = UserModel.fromJson(res);
+      final user = _preserveSavedPlan(
+        UserModel.fromJson(res),
+        getSavedUserData(),
+      );
       await saveUserData(user);
       return user;
     }
@@ -381,7 +391,20 @@ class ApiService {
     );
   }
 
-  // ─── WORKSPACE & BUSINESS SERVICES ───────────────────────────────
+  UserModel _preserveSavedPlan(UserModel user, UserModel? savedUser) {
+    final plan = user.plan?.trim().isNotEmpty == true
+        ? user.plan
+        : savedUser?.plan;
+    final organizationName = user.organizationName?.trim().isNotEmpty == true
+        ? user.organizationName
+        : savedUser?.organizationName;
+    return user.copyWith(
+      plan: plan,
+      organizationName: organizationName,
+    );
+  }
+
+  // â”€â”€â”€ WORKSPACE & BUSINESS SERVICES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// Fetch all accessible workspaces & businesses for current user
   Future<List<WorkspaceModel>> getWorkspaces() async {
@@ -428,7 +451,7 @@ class ApiService {
     String? address,
     String? contactEmail,
     int? foundedYear,
-    String emoji = '🏢',
+    String emoji = 'ðŸ¢',
     int colorValue = 0xFF6C5CE7,
     String description = '',
   }) async {
@@ -441,26 +464,41 @@ class ApiService {
       if (foundedYear != null) 'foundedYear': foundedYear,
     };
 
-    dynamic res;
-    try {
-      res = await post(ApiConstants.workspaces, body: body, requiresAuth: true);
-    } catch (e) {
-      // Fallback to /v1/businesses endpoint if /v1/workspaces fails
-      res = await post(ApiConstants.businesses, body: body, requiresAuth: true);
-    }
-
-    if (res is Map<String, dynamic>) {
-      final workspace = WorkspaceModel.fromJson(res);
-      // Ensure local visual properties like emoji/colorValue are preserved
-      return workspace.copyWith(
-        emoji: emoji,
-        colorValue: colorValue,
-        description:
-            description.isNotEmpty ? description : workspace.description,
+    final response = await post(
+      ApiConstants.businesses,
+      body: body,
+      requiresAuth: true,
+    );
+    final business = _businessResponseMap(response);
+    final businessId = (business?['id'] ?? business?['_id'])?.toString();
+    if (business == null || businessId == null || businessId.isEmpty) {
+      throw ApiException(
+        'Business was created, but the server did not return its ID. Refresh businesses before retrying.',
       );
     }
 
-    throw ApiException('Failed to create workspace');
+    final workspace = WorkspaceModel.fromJson(business);
+    return workspace.copyWith(
+      emoji: emoji,
+      colorValue: colorValue,
+      description:
+          description.isNotEmpty ? description : workspace.description,
+    );
+  }
+
+  Map<String, dynamic>? _businessResponseMap(dynamic response) {
+    dynamic business = response;
+    for (var depth = 0; depth < 3; depth++) {
+      if (business is! Map<String, dynamic>) return null;
+      final nested =
+          business['business'] ?? business['workspace'] ?? business['data'];
+      if (nested is Map<String, dynamic>) {
+        business = nested;
+      } else {
+        return business;
+      }
+    }
+    return business is Map<String, dynamic> ? business : null;
   }
 
   /// Get single workspace details
@@ -591,10 +629,21 @@ class ApiService {
   ) async {
     final response = await post(ApiConstants.jobs(businessId),
         body: body, requiresAuth: true);
-    final job = _jobResponseMap(response);
+    var job = _jobResponseMap(response);
+    if (job == null) {
+      final jobs = await getJobs(businessId);
+      for (final created in jobs) {
+        if (created['title']?.toString() == body['title']?.toString() &&
+            created['department']?.toString() ==
+                body['department']?.toString() &&
+            created['status']?.toString() == body['status']?.toString()) {
+          job = created;
+        }
+      }
+    }
     if (job == null) {
       throw ApiException(
-        'Job creation may have succeeded, but the server did not return a job. Refresh the job list before retrying.',
+        'Job creation succeeded, but the new job could not be found. Refresh the job list before retrying.',
       );
     }
     return {...body, ...job};
@@ -721,5 +770,131 @@ class ApiService {
       ApiConstants.payrollEntryDetail(businessId, entryId),
       requiresAuth: true,
     );
+  }
+
+  /// Fetch report metrics across all businesses accessible to the user.
+  Future<dynamic> getOrganizationReportOverview() {
+    return get(ApiConstants.reportsOverview, requiresAuth: true);
+  }
+
+  /// Fetch the overview report for a single business.
+  Future<dynamic> getBusinessReport(String businessId) {
+    return get(ApiConstants.businessReport(businessId), requiresAuth: true);
+  }
+
+  /// Fetch monthly income-versus-expense data for a business.
+  Future<dynamic> getFinancialTrend(String businessId) {
+    return get(ApiConstants.financialTrend(businessId), requiresAuth: true);
+  }
+
+  /// Fetch project progress and task breakdown data for a business.
+  Future<dynamic> getProjectAnalytics(String businessId) {
+    return get(ApiConstants.projectAnalytics(businessId), requiresAuth: true);
+  }
+
+  /// Fetch recent activity records for a business.
+  Future<dynamic> getAuditLogs(String businessId) {
+    return get(ApiConstants.auditLogs(businessId), requiresAuth: true);
+  }
+
+  /// Export financial records in CSV format.
+  Future<dynamic> exportFinances(String businessId) {
+    return get(ApiConstants.exportFinances(businessId), requiresAuth: true);
+  }
+
+  /// Export payroll records in CSV format.
+  Future<dynamic> exportPayroll(String businessId) {
+    return get(ApiConstants.exportPayroll(businessId), requiresAuth: true);
+  }
+
+  /// Export employee roster in CSV format.
+  Future<dynamic> exportEmployees(String businessId) {
+    return get(ApiConstants.exportEmployees(businessId), requiresAuth: true);
+  }
+
+  /// Upload a file to storage as a multipart request.
+  Future<dynamic> uploadStorageFile(String filename, Uint8List bytes,
+      {bool isRetry = false}) async {
+    if (filename.trim().isEmpty) {
+      throw ApiException('A filename is required to upload a file');
+    }
+    if (bytes.isEmpty) {
+      throw ApiException('Cannot upload an empty file');
+    }
+
+    final request = http.MultipartRequest(
+      'POST',
+      _buildUri(ApiConstants.uploadFile),
+    );
+    for (final header in _buildHeaders().entries) {
+      if (header.key.toLowerCase() != 'content-type') {
+        request.headers[header.key] = header.value;
+      }
+    }
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: filename),
+    );
+
+    http.Response response;
+    try {
+      final streamedResponse =
+          await _client.send(request).timeout(ApiConstants.timeoutDuration);
+      response = await http.Response.fromStream(streamedResponse)
+          .timeout(ApiConstants.timeoutDuration);
+    } catch (e) {
+      throw ApiException('Network error or server unreachable: $e');
+    }
+
+    if (response.statusCode == 401 &&
+        !isRetry &&
+        refreshToken != null) {
+      if (await _attemptTokenRefresh()) {
+        return uploadStorageFile(filename, bytes, isRetry: true);
+      }
+      await clearSession();
+      throw ApiException('Session expired. Please log in again.',
+          statusCode: 401);
+    }
+
+    return _processResponse(response);
+  }
+
+  /// Download a stored file as its original bytes.
+  Future<Uint8List> downloadStorageFile(String filename,
+      {bool isRetry = false}) async {
+    if (filename.trim().isEmpty) {
+      throw ApiException('A filename is required to download a file');
+    }
+
+    http.Response response;
+    try {
+      response = await _client
+          .get(
+            _buildUri(ApiConstants.getFile(filename)),
+            headers: {
+              ..._buildHeaders(),
+              'Accept': '*/*',
+            },
+          )
+          .timeout(ApiConstants.timeoutDuration);
+    } catch (e) {
+      throw ApiException('Network error or server unreachable: $e');
+    }
+
+    if (response.statusCode == 401 &&
+        !isRetry &&
+        refreshToken != null) {
+      if (await _attemptTokenRefresh()) {
+        return downloadStorageFile(filename, isRetry: true);
+      }
+      await clearSession();
+      throw ApiException('Session expired. Please log in again.',
+          statusCode: 401);
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _processResponse(response);
+    }
+    return response.bodyBytes;
   }
 }

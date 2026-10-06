@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/workspace_model.dart';
+import '../models/user_model.dart';
 import '../services/api_service.dart';
 import '../../core/constants/app_constants.dart';
 import '../../features/auth/auth_service.dart';
@@ -52,6 +53,12 @@ final activeWorkspaceProvider = Provider<WorkspaceModel?>((ref) {
   }
 });
 
+bool canCreateMultipleBusinesses(UserModel? user) {
+  final plan = user?.plan?.trim().toLowerCase();
+  return plan == 'organization' ||
+      (user?.organizationName?.trim().isNotEmpty ?? false);
+}
+
 class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
   final Ref _ref;
   final ApiService _apiService;
@@ -62,10 +69,7 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
 
   bool get canAddWorkspace {
     final user = _ref.read(authProvider).user;
-    final plan = user?.plan?.trim().toLowerCase();
-    final isOrganization = plan == 'organization' ||
-        (user?.organizationName?.trim().isNotEmpty ?? false);
-    return isOrganization || state.isEmpty;
+    return canCreateMultipleBusinesses(user) || state.isEmpty;
   }
 
   /// Load workspaces from Hive box first, then fetch fresh list from REST API
@@ -105,7 +109,9 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
 
   /// Add new workspace via REST API and save locally
   Future<bool> addWorkspace(WorkspaceModel workspace) async {
-    if (!canAddWorkspace) return false;
+    final user = _ref.read(authProvider).user;
+    final isOrganization = canCreateMultipleBusinesses(user);
+    if (!isOrganization && state.isNotEmpty) return false;
 
     final box = Hive.box<WorkspaceModel>(AppConstants.workspaceBox);
     final email = AuthService.getSessionEmail().trim().toLowerCase();
@@ -129,6 +135,7 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
       }
       return true;
     } catch (e) {
+      if (isOrganization) rethrow;
       debugPrint('API creation failed, saving locally: $e');
       await box.put(workspace.id, workspace);
       state = [...state, workspace];

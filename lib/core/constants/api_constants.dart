@@ -114,7 +114,8 @@ class ApiConstants {
 
   // Storage
   static const String uploadFile = '/v1/storage/upload';
-  static String getFile(String filename) => '/v1/storage/files/$filename';
+  static String getFile(String filename) =>
+      '/v1/storage/files/${Uri.encodeComponent(filename)}';
 
   // Audit logs
   static String auditLogs(String businessId) => '/v1/businesses/$businessId/audit-logs';

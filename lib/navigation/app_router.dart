@@ -18,6 +18,10 @@ import '../features/employees/screens/employee_detail_screen.dart';
 import '../features/followups/screens/followups_screen.dart';
 import '../features/expenses/screens/expenses_screen.dart';
 import '../features/jobs/screens/jobs_screen.dart';
+import '../features/payroll/screens/payroll_screen.dart';
+import '../features/reports/screens/reports_screen.dart';
+import '../features/storage/screens/storage_screen.dart';
+import '../features/activity/screens/activity_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -148,6 +152,22 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'jobs',
           builder: (context, state) => const JobsScreen(),
+        ),
+        GoRoute(
+          path: 'payroll',
+          builder: (context, state) => const PayrollScreen(),
+        ),
+        GoRoute(
+          path: 'reports',
+          builder: (context, state) => const ReportsScreen(),
+        ),
+        GoRoute(
+          path: 'storage',
+          builder: (context, state) => const StorageScreen(),
+        ),
+        GoRoute(
+          path: 'activity',
+          builder: (context, state) => const ActivityScreen(),
         ),
         GoRoute(
           path: 'followups',

@@ -613,6 +613,8 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final industryOptions = {..._industries, _selectedIndustry};
+
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -714,7 +716,7 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
                   prefixIcon:
                       Icon(Icons.category_rounded, color: AppColors.primary),
                 ),
-                items: _industries
+                items: industryOptions
                     .map(
                         (ind) => DropdownMenuItem(value: ind, child: Text(ind)))
                     .toList(),
@@ -1188,10 +1190,30 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                       ownerEmail: AuthService.getSessionEmail(),
                     );
 
-                    await notifier.addWorkspace(workspace);
-
-                    if (!context.mounted) return;
-                    Navigator.of(context).pop();
+                    try {
+                      final created = await notifier.addWorkspace(workspace);
+                      if (!context.mounted) return;
+                      if (created) {
+                        Navigator.of(context).pop();
+                      } else {
+                        setState(() => _isCreating = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'This account cannot create another business.',
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (error) {
+                      if (!context.mounted) return;
+                      setState(() => _isCreating = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Could not create business: $error'),
+                        ),
+                      );
+                    }
                   },
                 ),
               const SizedBox(height: 8),

@@ -50,14 +50,14 @@ class JobNotifier extends StateNotifier<AsyncValue<List<JobModel>>> {
   Future<void> addJob({
     required String businessId,
     required String title,
-    required String description,
+    required String department,
     required String status,
   }) async {
     final created = await _apiService.createJob(
       businessId,
       {
         'title': title,
-        'description': description,
+        'department': department,
         'status': status,
       },
     );
@@ -67,7 +67,7 @@ class JobNotifier extends StateNotifier<AsyncValue<List<JobModel>>> {
   Future<void> updateJob(
     JobModel job, {
     required String title,
-    required String description,
+    required String department,
     required String status,
   }) async {
     await _apiService.updateJob(
@@ -75,7 +75,7 @@ class JobNotifier extends StateNotifier<AsyncValue<List<JobModel>>> {
       job.id,
       {
         'title': title,
-        'description': description,
+        'department': department,
         'status': status,
       },
     );
@@ -83,7 +83,7 @@ class JobNotifier extends StateNotifier<AsyncValue<List<JobModel>>> {
       id: job.id,
       businessId: job.businessId,
       title: title,
-      description: description,
+      department: department,
       status: status,
     );
     _replaceInState(updated);
