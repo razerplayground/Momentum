@@ -496,67 +496,80 @@ class _FinanceTab extends ConsumerWidget {
                 padding: const EdgeInsets.only(bottom: 10),
                 child: AnimatedCard(
                   padding: const EdgeInsets.all(14),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: (e.isIncome
+                      Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: (e.isIncome
+                                      ? AppColors.accentGreen
+                                      : AppColors.accentRed)
+                                  .withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              e.isIncome
+                                  ? Icons.trending_up_rounded
+                                  : Icons.trending_down_rounded,
+                              color: e.isIncome
                                   ? AppColors.accentGreen
-                                  : AppColors.accentRed)
-                              .withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          e.isIncome
-                              ? Icons.trending_up_rounded
-                              : Icons.trending_down_rounded,
-                          color: e.isIncome
-                              ? AppColors.accentGreen
-                              : AppColors.accentRed,
-                          size: 20,
-                        ),
+                                  : AppColors.accentRed,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(e.title,
+                                    style: AppTextStyles.titleMedium),
+                                Text(DateFormat('dd MMM yyyy').format(e.date),
+                                    style: AppTextStyles.bodySmall),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${e.isIncome ? '+' : '-'}₹${e.amount.toStringAsFixed(0)}',
+                            style: AppTextStyles.titleMedium.copyWith(
+                              color: e.isIncome
+                                  ? AppColors.accentGreen
+                                  : AppColors.accentRed,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(e.title, style: AppTextStyles.titleMedium),
-                            Text(DateFormat('dd MMM yyyy').format(e.date),
-                                style: AppTextStyles.bodySmall),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        '${e.isIncome ? '+' : '-'}₹${e.amount.toStringAsFixed(0)}',
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: e.isIncome
-                              ? AppColors.accentGreen
-                              : AppColors.accentRed,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Edit transaction',
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => _showEditExpense(context, ref, e),
-                      ),
-                      Checkbox(
-                        value: e.isCompleted,
-                        onChanged: (_) => ref
-                            .read(expensesProvider.notifier)
-                            .toggleCompletion(e.id),
-                        activeColor: AppColors.primary,
-                      ),
-                      IconButton(
-                        tooltip: 'Delete transaction',
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          color: AppColors.accentRed,
-                        ),
-                        onPressed: () => _confirmAndDelete(context, ref, e),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            tooltip: 'Edit transaction',
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => _showEditExpense(context, ref, e),
+                          ),
+                          Checkbox(
+                            value: e.isCompleted,
+                            onChanged: (_) => ref
+                                .read(expensesProvider.notifier)
+                                .toggleCompletion(e.id),
+                            activeColor: AppColors.primary,
+                          ),
+                          IconButton(
+                            tooltip: 'Delete transaction',
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              color: AppColors.accentRed,
+                            ),
+                            onPressed: () => _confirmAndDelete(context, ref, e),
+                          ),
+                        ],
                       ),
                     ],
                   ),

@@ -47,60 +47,85 @@ class ExpensesScreen extends ConsumerWidget {
                 }
               },
               child: Card(
-                child: ListTile(
-                  onTap: () => _showEditSheet(context, ref, e),
-                  leading: Icon(
-                    e.isIncome
-                        ? Icons.trending_up_rounded
-                        : Icons.trending_down_rounded,
-                    color: e.isIncome
-                        ? AppColors.accentGreen
-                        : AppColors.accentRed,
-                  ),
-                  title: Text(e.title, style: AppTextStyles.titleMedium),
-                  subtitle: Text(e.date.toIso8601String().substring(0, 10)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        '${e.isIncome ? '+' : '-'}₹${e.amount.toStringAsFixed(0)}',
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: e.isIncome
-                              ? AppColors.accentGreen
-                              : AppColors.accentRed,
-                          fontWeight: FontWeight.w700,
+                      InkWell(
+                        onTap: () => _showEditSheet(context, ref, e),
+                        child: Row(
+                          children: [
+                            Icon(
+                              e.isIncome
+                                  ? Icons.trending_up_rounded
+                                  : Icons.trending_down_rounded,
+                              color: e.isIncome
+                                  ? AppColors.accentGreen
+                                  : AppColors.accentRed,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(e.title,
+                                      style: AppTextStyles.titleMedium),
+                                  Text(
+                                    e.date.toIso8601String().substring(0, 10),
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${e.isIncome ? '+' : '-'}₹${e.amount.toStringAsFixed(0)}',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                color: e.isIncome
+                                    ? AppColors.accentGreen
+                                    : AppColors.accentRed,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Checkbox(
-                        value: e.isCompleted,
-                        onChanged: (_) => ref
-                            .read(expensesProvider.notifier)
-                            .toggleCompletion(e.id),
-                        activeColor: AppColors.primary,
-                      ),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert_rounded, size: 20),
-                        onSelected: (value) {
-                          if (value == 'edit') {
-                            _showEditSheet(context, ref, e);
-                          } else if (value == 'delete') {
-                            _handleDelete(context, ref, e);
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                              value: 'edit',
-                              child: ListTile(
-                                leading: Icon(Icons.edit_rounded),
-                                title: Text('Edit'),
-                              )),
-                          PopupMenuItem(
-                              value: 'delete',
-                              child: ListTile(
-                                leading: Icon(Icons.delete_rounded,
-                                    color: Colors.red),
-                                title: Text('Delete'),
-                              )),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Checkbox(
+                            value: e.isCompleted,
+                            onChanged: (_) => ref
+                                .read(expensesProvider.notifier)
+                                .toggleCompletion(e.id),
+                            activeColor: AppColors.primary,
+                          ),
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert_rounded, size: 20),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _showEditSheet(context, ref, e);
+                              } else if (value == 'delete') {
+                                _handleDelete(context, ref, e);
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                  value: 'edit',
+                                  child: ListTile(
+                                    leading: Icon(Icons.edit_rounded),
+                                    title: Text('Edit'),
+                                  )),
+                              PopupMenuItem(
+                                  value: 'delete',
+                                  child: ListTile(
+                                    leading: Icon(Icons.delete_rounded,
+                                        color: Colors.red),
+                                    title: Text('Delete'),
+                                  )),
+                            ],
+                          ),
                         ],
                       ),
                     ],
