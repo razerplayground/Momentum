@@ -143,6 +143,10 @@ class _EmployeeDetailScreenState extends ConsumerState<EmployeeDetailScreen> {
                         icon: Icons.business_rounded,
                         label: 'Department',
                         value: employee.department),
+                         _InfoItem(
+      icon: Icons.payments_rounded,
+      label: 'Salary',
+      value: _formatSalary(employee.salary)),
                     _InfoItem(
                         icon: Icons.badge_rounded,
                         label: 'Status',
@@ -177,11 +181,23 @@ class _EmployeeDetailScreenState extends ConsumerState<EmployeeDetailScreen> {
       }
     } catch (error) {
       _handleEmployeeActionError(error, action: 'update');
+      
     } finally {
       if (mounted) setState(() => _isUpdating = false);
     }
   }
-
+String _formatSalary(double? salary) {
+  if (salary == null) return '';
+  final isWhole = salary == salary.roundToDouble();
+  final text = isWhole ? salary.toStringAsFixed(0) : salary.toStringAsFixed(2);
+  // Add thousands separators (e.g. 50000 -> 50,000)
+  final parts = text.split('.');
+  final intPart = parts[0].replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (m) => ',',
+  );
+  return '₹$intPart${parts.length > 1 ? '.${parts[1]}' : ''}';
+}
   Future<void> _confirmDelete(EmployeeModel employee) async {
     final confirmed = await showDialog<bool>(
       context: context,

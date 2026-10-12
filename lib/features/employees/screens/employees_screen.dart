@@ -10,6 +10,7 @@ import '../../../data/providers/workspace_provider.dart';
 import '../../../data/services/api_service.dart';
 import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/avatar_stack.dart';
+import '../../dashboard/dashboard_navigation_provider.dart';
 
 class EmployeesScreen extends ConsumerStatefulWidget {
   const EmployeesScreen({super.key});
@@ -28,8 +29,16 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
     super.dispose();
   }
 
+  void _openAddEmployee() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AddEmployeeScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final showHomeBackButton =
+        GoRouterState.of(context).uri.path == '/home/employees';
     final employees = ref.watch(workspaceEmployeesProvider);
     final active = employees.where((e) => e.statusStr == 'active').length;
 
@@ -54,7 +63,27 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Team', style: AppTextStyles.displaySmall),
+                    Row(
+                      children: [
+                        if (showHomeBackButton) ...[
+                          GestureDetector(
+                            onTap: () {
+                              ref
+                                  .read(dashboardTabIndexProvider.notifier)
+                                  .state = 0;
+                              context.go('/home');
+                            },
+                            child: const Icon(
+                              Icons.arrow_back_ios_rounded,
+                              size: 20,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Text('Team', style: AppTextStyles.displaySmall),
+                      ],
+                    ),
                     Text('$active active employees',
                         style: AppTextStyles.bodySmall),
                     const SizedBox(height: 16),
@@ -115,12 +144,13 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
             ),
           ),
           if (employees.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: EmptyState(
                 icon: Icons.people_outline_rounded,
                 title: 'No Employees',
                 subtitle: 'Add your team members to track and assign work.',
                 actionLabel: 'Add Employee',
+                onAction: _openAddEmployee,
               ),
             )
           else if (filteredEmployees.isEmpty)
@@ -149,18 +179,10 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddEmployee(context, ref),
+        onPressed: _openAddEmployee,
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.person_add_rounded, color: Colors.white),
       ),
-    );
-  }
-
-  void _showAddEmployee(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _AddEmployeeSheet(parentRef: ref),
     );
   }
 }
@@ -273,16 +295,16 @@ class _EmployeeCard extends StatelessWidget {
   }
 }
 
-class _AddEmployeeSheet extends StatefulWidget {
-  final WidgetRef parentRef;
-
-  const _AddEmployeeSheet({required this.parentRef});
+/// Full-screen "Add Employee" page.
+/// Opened from the FAB and from the "Add Employee" button in the empty state.
+class AddEmployeeScreen extends ConsumerStatefulWidget {
+  const AddEmployeeScreen({super.key});
 
   @override
-  State<_AddEmployeeSheet> createState() => _AddEmployeeSheetState();
+  ConsumerState<AddEmployeeScreen> createState() => _AddEmployeeScreenState();
 }
 
-class _AddEmployeeSheetState extends State<_AddEmployeeSheet> {
+class _AddEmployeeScreenState extends ConsumerState<AddEmployeeScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -300,210 +322,210 @@ class _AddEmployeeSheetState extends State<_AddEmployeeSheet> {
     super.dispose();
   }
 
+  Future<void> _save() async {
+    if (_isSaving) return;
+    if (!_formKey.currentState!.validate()) return;
+
+    final workspaces = ref.read(workspacesProvider);
+    final savedWorkspaceId = ref.read(activeWorkspaceIdProvider);
+    final workspace = workspaces
+            .where((item) => item.id == savedWorkspaceId)
+            .firstOrNull ??
+        ref.read(activeWorkspaceProvider) ??
+        workspaces.firstOrNull;
+    final workspaceId = workspace?.id;
+    if (workspaceId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select or create a business first.')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    final employee = EmployeeModel.create(
+      workspaceId: workspaceId,
+      name: _nameController.text.trim(),
+      email: _emailController.text.trim(),
+      role: _titleController.text.trim(),
+      department: _deptController.text.trim().isEmpty
+          ? 'General'
+          : _deptController.text.trim(),
+      avatarColorValue: AppColors.workspaceColors[_colorIndex].value,
+    );
+
+    try {
+      await ref.read(employeesProvider.notifier).addEmployee(employee);
+      if (!mounted) return;
+      Navigator.pop(context);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Employee added successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+
+      if (error is ApiException && error.statusCode == 401) {
+        await ref.read(authProvider.notifier).logout();
+        router.go('/login');
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Session expired. Please log in again.'),
+          ),
+        );
+        return;
+      }
+
+      if (error is ApiException &&
+          error.statusCode == 403 &&
+          error.message.toLowerCase().contains('individual plan')) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Organization plan required'),
+            content: const Text(
+              'This business is on the Individual plan. '
+              'Upgrade it to the Organization plan to add employees.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not add employee: ${error is ApiException ? '${error.message} (HTTP ${error.statusCode ?? 'unknown'})' : error}',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                    child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2)))),
-                const SizedBox(height: 20),
-                Text('Add Employee', style: AppTextStyles.headlineSmall),
-                const SizedBox(height: 14),
-                // Color for avatar
-                Row(
-                    children: AppColors.workspaceColors
-                        .take(6)
-                        .toList()
-                        .asMap()
-                        .entries
-                        .map((entry) {
-                  final i = entry.key;
-                  final c = entry.value;
-                  return GestureDetector(
-                    onTap: () => setState(() => _colorIndex = i),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.only(right: 8),
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: c,
-                        shape: BoxShape.circle,
-                        border: _colorIndex == i
-                            ? Border.all(
-                                color: AppColors.textPrimary, width: 2.5)
-                            : null,
-                      ),
-                    ),
-                  );
-                }).toList()),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: _nameController,
-                  textCapitalization: TextCapitalization.words,
-                  validator: (value) => (value ?? '').trim().isEmpty
-                      ? 'Full name is required'
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name *',
-                    prefixIcon:
-                        Icon(Icons.person_rounded, color: AppColors.primary),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) {
-                    final email = (value ?? '').trim();
-                    if (email.isEmpty) return 'Email is required';
-                    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-                        .hasMatch(email)) {
-                      return 'Enter a valid email';
-                    }
-                    return null;
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Email *',
-                    prefixIcon:
-                        Icon(Icons.email_rounded, color: AppColors.primary),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _deptController,
-                  validator: (value) => (value ?? '').trim().isEmpty
-                      ? 'Department is required'
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Department *',
-                    prefixIcon:
-                        Icon(Icons.business_rounded, color: AppColors.primary),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _titleController,
-                  validator: (value) => (value ?? '').trim().isEmpty
-                      ? 'Job title is required'
-                      : null,
-                  decoration: const InputDecoration(
-                    labelText: 'Job Title *',
-                    prefixIcon:
-                        Icon(Icons.work_rounded, color: AppColors.primary),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                GradientButton(
-                    label: _isSaving ? 'Saving Employee...' : 'Add Employee',
-                    onTap: () async {
-                      if (_isSaving) return;
-                      if (!_formKey.currentState!.validate()) return;
-                      final workspaces =
-                          widget.parentRef.read(workspacesProvider);
-                      final savedWorkspaceId =
-                          widget.parentRef.read(activeWorkspaceIdProvider);
-                      final workspace = workspaces
-                              .where((item) => item.id == savedWorkspaceId)
-                              .firstOrNull ??
-                          widget.parentRef.read(activeWorkspaceProvider) ??
-                          workspaces.firstOrNull;
-                      final workspaceId = workspace?.id;
-                      if (workspaceId == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Select or create a business first.'),
+    final avatarColors = AppColors.workspaceColors.take(6).toList();
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_rounded,
+              size: 20, color: AppColors.textPrimary),
+        ),
+        title: Text('Add Employee', style: AppTextStyles.headlineSmall),
+        centerTitle: false,
+      ),
+      body: SafeArea(
+        child: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Avatar Color', style: AppTextStyles.titleLarge),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: avatarColors.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final c = entry.value;
+                      return GestureDetector(
+                        onTap: () => setState(() => _colorIndex = i),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.only(right: 10),
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: _colorIndex == i
+                                ? Border.all(
+                                    color: AppColors.textPrimary, width: 2.5)
+                                : null,
                           ),
-                        );
-                        return;
-                      }
-                      setState(() => _isSaving = true);
-                      final employee = EmployeeModel.create(
-                        workspaceId: workspaceId,
-                        name: _nameController.text.trim(),
-                        email: _emailController.text.trim(),
-                        role: _titleController.text.trim(),
-                        department: _deptController.text.trim().isEmpty
-                            ? 'General'
-                            : _deptController.text.trim(),
-                        avatarColorValue:
-                            AppColors.workspaceColors[_colorIndex].value,
+                        ),
                       );
-                      try {
-                        await widget.parentRef
-                            .read(employeesProvider.notifier)
-                            .addEmployee(employee);
-                        if (context.mounted) Navigator.pop(context);
-                      } catch (error) {
-                        if (context.mounted) {
-                          setState(() => _isSaving = false);
-                          if (error is ApiException &&
-                              error.statusCode == 401) {
-                            await widget.parentRef
-                                .read(authProvider.notifier)
-                                .logout();
-                            if (!context.mounted) return;
-                            Navigator.pop(context);
-                            context.go('/login');
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Session expired. Please log in again.'),
-                              ),
-                            );
-                            return;
-                          }
-                          if (error is ApiException &&
-                              error.statusCode == 403 &&
-                              error.message
-                                  .toLowerCase()
-                                  .contains('individual plan')) {
-                            await showDialog<void>(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                title: const Text('Organization plan required'),
-                                content: const Text(
-                                  'This business is on the Individual plan. '
-                                  'Upgrade it to the Organization plan to add employees.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext),
-                                    child: const Text('OK'),
-                                  ),
-                                ],
-                              ),
-                            );
-                            return;
-                          }
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Could not add employee: ${error is ApiException ? '${error.message} (HTTP ${error.statusCode ?? 'unknown'})' : error}',
-                              ),
-                            ),
-                          );
-                        }
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _nameController,
+                    textCapitalization: TextCapitalization.words,
+                    validator: (value) => (value ?? '').trim().isEmpty
+                        ? 'Full name is required'
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Full Name *',
+                      prefixIcon:
+                          Icon(Icons.person_rounded, color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      final email = (value ?? '').trim();
+                      if (email.isEmpty) return 'Email is required';
+                      if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                          .hasMatch(email)) {
+                        return 'Enter a valid email';
                       }
-                    }),
-                const SizedBox(height: 8),
-              ],
+                      return null;
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Email *',
+                      prefixIcon:
+                          Icon(Icons.email_rounded, color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _deptController,
+                    validator: (value) => (value ?? '').trim().isEmpty
+                        ? 'Department is required'
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Department *',
+                      prefixIcon: Icon(Icons.business_rounded,
+                          color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _titleController,
+                    validator: (value) => (value ?? '').trim().isEmpty
+                        ? 'Job title is required'
+                        : null,
+                    decoration: const InputDecoration(
+                      labelText: 'Job Title *',
+                      prefixIcon:
+                          Icon(Icons.work_rounded, color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  GradientButton(
+                    label: _isSaving ? 'Saving Employee...' : 'Add Employee',
+                    onTap: _save,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

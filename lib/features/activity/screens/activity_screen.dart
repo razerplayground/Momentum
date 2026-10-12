@@ -5,11 +5,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/providers/workspace_provider.dart';
 import '../../../data/services/api_service.dart';
+import '../csv_export.dart';
 
 class ActivityScreen extends ConsumerStatefulWidget {
   const ActivityScreen({super.key});
@@ -95,7 +97,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   Text('Export CSV', style: AppTextStyles.titleLarge),
                   const SizedBox(height: 6),
                   Text(
-                    'Exported files are saved in the app documents folder.',
+                    'Create a CSV, then save or share it from your device.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),
@@ -232,8 +234,8 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
         'employees' => await api.exportEmployees(businessId),
         _ => throw StateError('Unknown export type: $kind'),
       };
-      final csv = _extractCsv(response);
-      if (csv == null || csv.trim().isEmpty) {
+      final csv = extractCsvExport(response);
+      if (csv == null) {
         throw const FormatException('The server returned an empty CSV export.');
       }
 
@@ -248,9 +250,20 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
       );
       await file.writeAsBytes(Uint8List.fromList(utf8.encode(csv)),
           flush: true);
+      String? shareError;
+      try {
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          subject: '${_exportLabel(kind)} CSV',
+        );
+      } catch (error) {
+        shareError = error.toString();
+      }
       if (!mounted) return;
       setState(() {
-        _exportMessage = 'Saved ${file.path}';
+        _exportMessage = shareError == null
+            ? 'CSV created and saved. Use the share menu to save or send it.'
+            : 'CSV saved to ${file.path}, but sharing failed: $shareError';
       });
     } catch (error) {
       if (!mounted) return;
@@ -266,19 +279,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
   }
 
-  String? _extractCsv(dynamic response) {
-    if (response is String) return response;
-    if (response is List<int>) return utf8.decode(response);
-    if (response is Map) {
-      for (final key in const ['csv', 'content', 'data', 'result']) {
-        final value = response[key];
-        if (value is String) return value;
-        final nested = _extractCsv(value);
-        if (nested != null) return nested;
-      }
-    }
-    return null;
-  }
+  String _exportLabel(String kind) => switch (kind) {
+        'finances' => 'Financial records',
+        'payroll' => 'Payroll records',
+        'employees' => 'Employee roster',
+        _ => 'Business records',
+      };
 }
 
 class _ExportButton extends StatelessWidget {

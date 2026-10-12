@@ -162,6 +162,115 @@ void main() {
     expect(service.getSavedUserData()?.plan, 'organization');
   });
 
+  test('does not downgrade a saved organization account to individual',
+      () async {
+    final service = ApiService(
+      client: MockClient((_) async => http.Response(
+            jsonEncode({
+              'id': 'user-1',
+              'email': 'jane@example.com',
+              'name': 'Jane Doe',
+              'plan': 'individual',
+            }),
+            200,
+          )),
+    );
+    await service.saveUserData(UserModel(
+      id: 'user-1',
+      email: 'jane@example.com',
+      name: 'Jane Doe',
+      plan: 'organization',
+      organizationName: 'Example Organization',
+    ));
+
+    final user = await service.getMe();
+
+    expect(user.plan, 'organization');
+    expect(user.organizationName, 'Example Organization');
+  });
+
+  test('does not reuse another user account plan', () async {
+    final service = ApiService(
+      client: MockClient((_) async => http.Response(
+            jsonEncode({
+              'id': 'user-2',
+              'email': 'alex@example.com',
+              'name': 'Alex Smith',
+              'plan': 'individual',
+            }),
+            200,
+          )),
+    );
+    await service.saveUserData(UserModel(
+      id: 'user-1',
+      email: 'jane@example.com',
+      name: 'Jane Doe',
+      plan: 'organization',
+      organizationName: 'Example Organization',
+    ));
+
+    final user = await service.getMe();
+
+    expect(user.plan, 'individual');
+    expect(user.organizationName, isNull);
+  });
+
+  test('retries profile update after an unauthorized response', () async {
+    final profileAuthorizationHeaders = <String?>[];
+    final service = ApiService(
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/refresh') {
+          return http.Response(
+            jsonEncode({
+              'accessToken': 'refreshed-access-token',
+              'refreshToken': 'refreshed-refresh-token',
+            }),
+            200,
+          );
+        }
+
+        profileAuthorizationHeaders.add(request.headers['authorization']);
+        if (profileAuthorizationHeaders.length == 1) {
+          return http.Response(jsonEncode({'message': 'Unauthorized'}), 400);
+        }
+
+        return http.Response(
+          jsonEncode({
+            'id': 'user-1',
+            'email': 'jane@example.com',
+            'name': 'Jane Updated',
+            'plan': 'individual',
+          }),
+          200,
+        );
+      }),
+    );
+    await service.saveTokens(
+      access: 'expired-access-token',
+      refresh: 'test-refresh-token',
+    );
+    await service.saveUserData(UserModel(
+      id: 'user-1',
+      email: 'jane@example.com',
+      name: 'Jane Doe',
+      plan: 'organization',
+      organizationName: 'Example Organization',
+    ));
+
+    final user = await service.updateMe(
+      name: 'Jane Updated',
+      phoneNumber: '555-0100',
+    );
+
+    expect(profileAuthorizationHeaders, [
+      'Bearer expired-access-token',
+      'Bearer refreshed-access-token',
+    ]);
+    expect(user.name, 'Jane Updated');
+    expect(user.plan, 'organization');
+    expect(user.organizationName, 'Example Organization');
+  });
+
   test('creates additional businesses through the businesses endpoint',
       () async {
     http.Request? capturedRequest;
@@ -252,6 +361,77 @@ void main() {
       capturedRequest?.headers['authorization'],
       'Bearer test-access-token',
     );
+  });
+
+  test('retries employee update after a 400 Unauthorized response', () async {
+    final employeeAuthorizationHeaders = <String?>[];
+    final service = ApiService(
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/refresh') {
+          return http.Response(
+            jsonEncode({
+              'accessToken': 'refreshed-access-token',
+              'refreshToken': 'refreshed-refresh-token',
+            }),
+            200,
+          );
+        }
+
+        employeeAuthorizationHeaders.add(request.headers['authorization']);
+        if (employeeAuthorizationHeaders.length == 1) {
+          return http.Response(jsonEncode({'message': 'Unauthorized'}), 400);
+        }
+        return http.Response('', 204);
+      }),
+    );
+    await service.saveTokens(
+      access: 'expired-access-token',
+      refresh: 'test-refresh-token',
+    );
+
+    await service.updateEmployee('business-1', 'employee-1', {
+      'title': 'Designer',
+      'status': 'active',
+    });
+
+    expect(employeeAuthorizationHeaders, [
+      'Bearer expired-access-token',
+      'Bearer refreshed-access-token',
+    ]);
+  });
+
+  test('retries employee delete after a 400 Unauthorized response', () async {
+    final employeeAuthorizationHeaders = <String?>[];
+    final service = ApiService(
+      client: MockClient((request) async {
+        if (request.url.path == '/v1/auth/refresh') {
+          return http.Response(
+            jsonEncode({
+              'accessToken': 'refreshed-access-token',
+              'refreshToken': 'refreshed-refresh-token',
+            }),
+            200,
+          );
+        }
+
+        employeeAuthorizationHeaders.add(request.headers['authorization']);
+        if (employeeAuthorizationHeaders.length == 1) {
+          return http.Response(jsonEncode({'message': 'Unauthorized'}), 400);
+        }
+        return http.Response('', 204);
+      }),
+    );
+    await service.saveTokens(
+      access: 'expired-access-token',
+      refresh: 'test-refresh-token',
+    );
+
+    await service.deleteEmployee('business-1', 'employee-1');
+
+    expect(employeeAuthorizationHeaders, [
+      'Bearer expired-access-token',
+      'Bearer refreshed-access-token',
+    ]);
   });
 
   test('gets jobs for a business', () async {
@@ -645,6 +825,89 @@ void main() {
     ]);
   });
 
+  test('falls back to business records when CSV endpoints are unavailable',
+      () async {
+    final requestedPaths = <String>[];
+    final service = ApiService(
+      client: MockClient((request) async {
+        final path = request.url.path;
+        requestedPaths.add(path);
+        if (path.endsWith('/exports/finances') ||
+            path.endsWith('/exports/payroll') ||
+            path.endsWith('/exports/employees')) {
+          return http.Response(jsonEncode({'message': 'Not Found'}), 404);
+        }
+        if (path.endsWith('/finances/income')) {
+          return http.Response(
+            jsonEncode({
+              'data': [
+                {'id': 'income-1', 'amount': 250},
+              ],
+            }),
+            200,
+          );
+        }
+        if (path.endsWith('/finances/expenses')) {
+          return http.Response(
+            jsonEncode([
+              {'id': 'expense-1', 'amount': 75},
+            ]),
+            200,
+          );
+        }
+        if (path.endsWith('/payroll')) {
+          return http.Response(
+            jsonEncode({
+              'entries': [
+                {'id': 'payroll-1', 'netPay': 1000},
+              ],
+            }),
+            200,
+          );
+        }
+        if (path.endsWith('/employees')) {
+          return http.Response(
+            jsonEncode({
+              'employees': [
+                {'id': 'employee-1', 'name': 'Jane Doe'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('', 500);
+      }),
+    );
+    await service.saveTokens(access: 'test-access-token');
+
+    final finances = await service.exportFinances('business-1');
+    final payroll = await service.exportPayroll('business-1');
+    final employees = await service.exportEmployees('business-1');
+
+    expect(finances['records'], [
+      {'id': 'income-1', 'amount': 250, 'recordType': 'income'},
+      {'id': 'expense-1', 'amount': 75, 'recordType': 'expense'},
+    ]);
+    expect(payroll['records'], [
+      {'id': 'payroll-1', 'netPay': 1000},
+    ]);
+    expect(employees['records'], [
+      {'id': 'employee-1', 'name': 'Jane Doe'},
+    ]);
+    expect(
+      requestedPaths,
+      [
+        '/v1/businesses/business-1/exports/finances',
+        '/v1/businesses/business-1/finances/income',
+        '/v1/businesses/business-1/finances/expenses',
+        '/v1/businesses/business-1/exports/payroll',
+        '/v1/businesses/business-1/payroll',
+        '/v1/businesses/business-1/exports/employees',
+        '/v1/businesses/business-1/employees',
+      ],
+    );
+  });
+
   test('uploads a file as authenticated multipart form data', () async {
     http.Request? capturedRequest;
     final service = ApiService(
@@ -668,7 +931,8 @@ void main() {
     expect(response['file']['filename'], 'stored-receipt.png');
     expect(capturedRequest?.method, 'POST');
     expect(capturedRequest?.url.path, '/v1/storage/upload');
-    expect(capturedRequest?.headers['authorization'], 'Bearer test-access-token');
+    expect(
+        capturedRequest?.headers['authorization'], 'Bearer test-access-token');
     expect(
       capturedRequest?.headers['content-type'],
       startsWith('multipart/form-data; boundary='),
@@ -695,7 +959,8 @@ void main() {
       capturedRequest?.url.toString(),
       endsWith('/v1/storage/files/receipt%20%231.png'),
     );
-    expect(capturedRequest?.headers['authorization'], 'Bearer test-access-token');
+    expect(
+        capturedRequest?.headers['authorization'], 'Bearer test-access-token');
     expect(capturedRequest?.headers['accept'], '*/*');
   });
 }

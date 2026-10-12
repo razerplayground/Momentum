@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/models/appointment_model.dart';
+import '../../../data/providers/calendar_settings_provider.dart';
 import '../../../data/providers/other_providers.dart';
 import '../../../data/providers/workspace_provider.dart';
+import '../../../core/service/notification.dart';
+import '../../dashboard/dashboard_navigation_provider.dart';
 import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/avatar_stack.dart';
 
@@ -71,10 +75,16 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   void _selectDate(DateTime date) {
     setState(() => _selectedDate = date);
     ref.read(selectedDateProvider.notifier).state = date;
+    ref.read(viewedMonthProvider.notifier).state =
+        DateTime(date.year, date.month, 1);
   }
 
   /// Switches the calendar view and plays a fade transition.
   Future<void> _switchView(_CalendarView newView) async {
+    if (newView == _CalendarView.month) {
+      ref.read(viewedMonthProvider.notifier).state =
+          DateTime(_selectedDate.year, _selectedDate.month, 1);
+    }
     await _fadeCtrl.reverse();
     setState(() => _view = newView);
     _fadeCtrl.forward();
@@ -112,10 +122,29 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                   children: [
                     Row(
                       children: [
+                        IconButton(
+                          onPressed: () {
+                            ref.read(dashboardTabIndexProvider.notifier).state =
+                                0;
+                            context.go('/home');
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
+                          icon: const Icon(
+                            Icons.arrow_back_ios_rounded,
+                            size: 20,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('My Calendar', style: AppTextStyles.displaySmall),
+                            Text('My Calendar',
+                                style: AppTextStyles.displaySmall),
                             Text(
                               DateFormat('MMMM d, yyyy').format(_selectedDate),
                               style: AppTextStyles.bodySmall,
@@ -132,7 +161,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                           ),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            width: 40, height: 40,
+                            width: 40,
+                            height: 40,
                             decoration: BoxDecoration(
                               color: _view == _CalendarView.month
                                   ? AppColors.primary
@@ -158,9 +188,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                         GestureDetector(
                           onTap: () => _showCalendarSettings(context),
                           child: Container(
-                            width: 40, height: 40,
+                            width: 40,
+                            height: 40,
                             decoration: BoxDecoration(
-                              color: AppColors.surface, shape: BoxShape.circle,
+                              color: AppColors.surface,
+                              shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
                                     color: Colors.black.withOpacity(0.06),
@@ -191,36 +223,32 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           ),
 
           // ─── Day Timeline ─────────────────────────────────────────
-          if (_view == _CalendarView.day)
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: appointments.isEmpty
-                  ? SliverFillRemaining(
-                      child: EmptyState(
-                        icon: Icons.event_outlined,
-                        title: 'No Appointments',
-                        subtitle: 'No appointments scheduled for this day.',
-                        actionLabel: 'Add Appointment',
-                        onAction: () => _showAddAppointment(context),
-                      ),
-                    )
-                  : SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, i) => _AppointmentTimelineTile(
-                            appointment: appointments[i]),
-                        childCount: appointments.length,
-                      ),
-                    ),
-            )
-          else
-            const SliverToBoxAdapter(child: SizedBox.shrink()),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            sliver: appointments.isEmpty
+                ? SliverFillRemaining(
+                    child: EmptyState(
+                      icon: Icons.event_outlined,
+                      title: 'No Appointments',
+                      subtitle: 'No appointments scheduled for this day.',
+                      actionLabel: 'Add Appointment',
+                      onAction: () => _openAddAppointment(context),
+                    ),
+                  )
+                : SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) => _AppointmentTimelineTile(
+                          appointment: appointments[i]),
+                      childCount: appointments.length,
+                    ),
+                  ),
+          )
         ],
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'calendarScreenFab',
-        onPressed: () => _showAddAppointment(context),
+        onPressed: () => _openAddAppointment(context),
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add_rounded, color: Colors.white),
       ),
@@ -267,11 +295,26 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     final monthAppts = ref.watch(monthAppointmentsProvider);
 
     // Build a set of days that have appointments for quick lookup
-    final daysWithAppts = <int>{};
+    final dayAppointmentCount = <int, int>{};
     for (final a in monthAppts) {
-      if (a.startTime.year == viewedMonth.year &&
-          a.startTime.month == viewedMonth.month) {
-        daysWithAppts.add(a.startTime.day);
+      final monthStart = DateTime(viewedMonth.year, viewedMonth.month, 1);
+      final monthEnd =
+          DateTime(viewedMonth.year, viewedMonth.month + 1, 0, 23, 59, 59, 999);
+      final start = a.startTime;
+      final end = a.endTime;
+
+      if (start.isAfter(monthEnd) || end.isBefore(monthStart)) continue;
+
+      var cursor = DateTime(start.year, start.month, start.day);
+      final finish = DateTime(end.year, end.month, end.day);
+
+      while (!cursor.isAfter(finish)) {
+        if (cursor.year == viewedMonth.year &&
+            cursor.month == viewedMonth.month) {
+          dayAppointmentCount[cursor.day] =
+              (dayAppointmentCount[cursor.day] ?? 0) + 1;
+        }
+        cursor = cursor.add(const Duration(days: 1));
       }
     }
 
@@ -291,7 +334,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             GestureDetector(
               onTap: () => _navigateMonth(-1),
               child: Container(
-                width: 36, height: 36,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: AppColors.surfaceVariant,
                   borderRadius: BorderRadius.circular(10),
@@ -311,7 +355,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             GestureDetector(
               onTap: () => _navigateMonth(1),
               child: Container(
-                width: 36, height: 36,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: AppColors.surfaceVariant,
                   borderRadius: BorderRadius.circular(10),
@@ -363,30 +408,36 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             final isToday = date.day == DateTime.now().day &&
                 date.month == DateTime.now().month &&
                 date.year == DateTime.now().year;
-            final hasAppointment = daysWithAppts.contains(dayNum);
+            final appointmentCount = dayAppointmentCount[dayNum] ?? 0;
+            final hasAppointment = appointmentCount > 0;
 
             return GestureDetector(
               onTap: () {
-                // Selecting a day in month view: update selected date,
-                // sync selectedDateProvider, and switch back to day view.
                 _selectDate(date);
-                _switchView(_CalendarView.day);
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 margin: const EdgeInsets.all(2),
+                padding: const EdgeInsets.symmetric(vertical: 4),
                 decoration: BoxDecoration(
                   gradient: isSelected ? AppColors.purpleGradient : null,
                   color: isSelected
                       ? null
-                      : isToday
+                      : hasAppointment
                           ? AppColors.primary.withOpacity(0.08)
-                          : Colors.transparent,
+                          : isToday
+                              ? AppColors.primary.withOpacity(0.08)
+                              : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
                   border: isToday && !isSelected
                       ? Border.all(
                           color: AppColors.primary.withOpacity(0.4), width: 1.5)
-                      : null,
+                      : hasAppointment && !isSelected
+                          ? Border.all(
+                              color: AppColors.primary.withOpacity(0.2),
+                              width: 1,
+                            )
+                          : null,
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -407,12 +458,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                     if (hasAppointment) ...[
                       const SizedBox(height: 3),
                       Container(
-                        width: 5, height: 5,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? Colors.white70
+                              ? Colors.white.withOpacity(0.2)
                               : AppColors.primary,
-                          shape: BoxShape.circle,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '$appointmentCount',
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: isSelected ? Colors.white : Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -426,12 +488,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     );
   }
 
-  void _showAddAppointment(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) =>
-          _AddAppointmentSheet(parentRef: ref, date: _selectedDate),
+  /// Opens the full-screen Add Appointment page for the selected date.
+  void _openAddAppointment(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AddAppointmentScreen(date: _selectedDate),
+      ),
     );
   }
 
@@ -573,7 +635,8 @@ class _AppointmentTimelineTile extends StatelessWidget {
               child: Row(
                 children: [
                   Container(
-                    width: 4, height: 60,
+                    width: 4,
+                    height: 60,
                     decoration: BoxDecoration(
                       color: Color(appointment.colorValue),
                       borderRadius: BorderRadius.circular(2),
@@ -591,8 +654,8 @@ class _AppointmentTimelineTile extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(
                           '${DateFormat('hh:mm a').format(appointment.startTime)} - ${DateFormat('hh:mm a').format(appointment.endTime)}',
-                          style: AppTextStyles.bodySmall.copyWith(
-                              color: Color(appointment.colorValue)),
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: Color(appointment.colorValue)),
                         ),
                       ],
                     ),
@@ -609,161 +672,334 @@ class _AppointmentTimelineTile extends StatelessWidget {
   }
 }
 
-// ─── Add Appointment Sheet ────────────────────────────────────────────────────
+// ─── Add Appointment Screen (full page) ───────────────────────────────────────
 
-class _AddAppointmentSheet extends StatefulWidget {
-  final WidgetRef parentRef;
+/// Full-screen "New Appointment" page.
+/// Opened from the FAB and from the "Add Appointment" button in the empty state.
+class AddAppointmentScreen extends ConsumerStatefulWidget {
   final DateTime date;
 
-  const _AddAppointmentSheet({required this.parentRef, required this.date});
+  const AddAppointmentScreen({super.key, required this.date});
 
   @override
-  State<_AddAppointmentSheet> createState() => _AddAppointmentSheetState();
+  ConsumerState<AddAppointmentScreen> createState() =>
+      _AddAppointmentScreenState();
 }
 
-class _AddAppointmentSheetState extends State<_AddAppointmentSheet> {
+class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _locationController = TextEditingController();
   TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
   int _colorIndex = 0;
+  bool _isSaving = false;
 
   final List<Color> _colors = [
-    AppColors.primary, AppColors.accentBlue, AppColors.accentGreen,
-    AppColors.accentOrange, AppColors.accentPink, AppColors.accentTeal,
+    AppColors.primary,
+    AppColors.accentBlue,
+    AppColors.accentGreen,
+    AppColors.accentOrange,
+    AppColors.accentPink,
+    AppColors.accentTeal,
   ];
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom),
+  void initState() {
+    super.initState();
+    final settings = ref.read(calendarSettingsProvider);
+    _startTime = settings.workStart;
+    final startMinutes = _startTime.hour * 60 + _startTime.minute + 60;
+    final normalized = startMinutes % (24 * 60);
+    _endTime = TimeOfDay(
+      hour: normalized ~/ 60,
+      minute: normalized % 60,
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _locationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime({required bool isStart}) async {
+    final t = await showTimePicker(
+      context: context,
+      initialTime: isStart ? _startTime : _endTime,
+    );
+    if (t == null) return;
+    setState(() {
+      if (isStart) {
+        _startTime = t;
+      } else {
+        _endTime = t;
+      }
+    });
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) return;
+    if (!_formKey.currentState!.validate()) return;
+
+    final workspaceId = ref.read(activeWorkspaceIdProvider);
+    if (workspaceId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a workspace before scheduling.')),
+      );
+      
+      return;
+    }
+
+    final settings = ref.read(calendarSettingsProvider);
+    final start = DateTime(
+      widget.date.year,
+      widget.date.month,
+      widget.date.day,
+      _startTime.hour,
+      _startTime.minute,
+    );
+    final end = DateTime(
+      widget.date.year,
+      widget.date.month,
+      widget.date.day,
+      _endTime.hour,
+      _endTime.minute,
+    );
+    if (!end.isAfter(start)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('End time must be later than start time.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final startMinutes = _startTime.hour * 60 + _startTime.minute;
+    final endMinutes = _endTime.hour * 60 + _endTime.minute;
+    final workStartMinutes =
+        settings.workStart.hour * 60 + settings.workStart.minute;
+    final workEndMinutes = settings.workEnd.hour * 60 + settings.workEnd.minute;
+    final outsideWorkingHours =
+        startMinutes < workStartMinutes || endMinutes > workEndMinutes;
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (outsideWorkingHours) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Outside your working hours.')),
+      );
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      final appointment = AppointmentModel.create(
+        workspaceId: workspaceId,
+        title: _titleController.text.trim(),
+        startTime: start,
+        endTime: end,
+        location: _locationController.text.trim(),
+        colorValue: _colors[_colorIndex].value,
+      );
+      await ref.read(appointmentsProvider.notifier).add(appointment);
+
+      // Schedule alarm-style reminder using the "Default Reminders" setting.
+      await NotificationService.scheduleAppointmentReminder(
+        seed: '$workspaceId${appointment.title}',
+        title: appointment.title,
+        start: start,
+        reminderMinutes: settings.reminderMinutes,
+        location: _locationController.text.trim(),
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Appointment scheduled successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Unable to schedule appointment: $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Widget _timeBox({
+    required IconData icon,
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
           children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text('New Appointment', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 16),
-            Row(
-                children: _colors.asMap().entries.map((entry) {
-              final i = entry.key;
-              final c = entry.value;
-              return GestureDetector(
-                onTap: () => setState(() => _colorIndex = i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.only(right: 8),
-                  width: 28, height: 28,
-                  decoration: BoxDecoration(
-                    color: c, shape: BoxShape.circle,
-                    border: _colorIndex == i
-                        ? Border.all(color: AppColors.textPrimary, width: 2.5)
-                        : null,
-                  ),
-                ),
-              );
-            }).toList()),
-            const SizedBox(height: 14),
-            TextField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                    hintText: 'Title',
-                    prefixIcon: Icon(Icons.event_rounded,
-                        color: AppColors.primary))),
-            const SizedBox(height: 12),
-            TextField(
-                controller: _locationController,
-                decoration: const InputDecoration(
-                    hintText: 'Location (optional)',
-                    prefixIcon: Icon(Icons.location_on_rounded,
-                        color: AppColors.primary))),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                    child: GestureDetector(
-                  onTap: () async {
-                    final t = await showTimePicker(
-                        context: context, initialTime: _startTime);
-                    if (t != null) setState(() => _startTime = t);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                        color: AppColors.surfaceVariant,
-                        borderRadius: BorderRadius.circular(12)),
-                    child: Row(children: [
-                      const Icon(Icons.access_time_rounded,
-                          color: AppColors.primary, size: 18),
-                      const SizedBox(width: 8),
-                      Text(_startTime.format(context),
-                          style: AppTextStyles.titleMedium),
-                    ]),
-                  ),
-                )),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: GestureDetector(
-                  onTap: () async {
-                    final t = await showTimePicker(
-                        context: context, initialTime: _endTime);
-                    if (t != null) setState(() => _endTime = t);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                        color: AppColors.surfaceVariant,
-                        borderRadius: BorderRadius.circular(12)),
-                    child: Row(children: [
-                      const Icon(Icons.access_time_filled_rounded,
-                          color: AppColors.primary, size: 18),
-                      const SizedBox(width: 8),
-                      Text(_endTime.format(context),
-                          style: AppTextStyles.titleMedium),
-                    ]),
-                  ),
-                )),
-              ],
+            Icon(icon, color: AppColors.primary, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: AppTextStyles.labelSmall),
+                  Text(value, style: AppTextStyles.titleMedium),
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
-            GradientButton(
-                label: 'Schedule Appointment',
-                onTap: () {
-                  if (_titleController.text.trim().isEmpty) return;
-                  final workspaceId =
-                      widget.parentRef.read(activeWorkspaceIdProvider);
-                  if (workspaceId == null) return;
-                  final start = DateTime(
-                      widget.date.year, widget.date.month, widget.date.day,
-                      _startTime.hour, _startTime.minute);
-                  final end = DateTime(
-                      widget.date.year, widget.date.month, widget.date.day,
-                      _endTime.hour, _endTime.minute);
-                  final appointment = AppointmentModel.create(
-                    workspaceId: workspaceId,
-                    title: _titleController.text.trim(),
-                    startTime: start,
-                    endTime: end,
-                    location: _locationController.text.trim(),
-                    colorValue: _colors[_colorIndex].value,
-                  );
-                  widget.parentRef
-                      .read(appointmentsProvider.notifier)
-                      .add(appointment);
-                  Navigator.pop(context);
-                }),
-            const SizedBox(height: 8),
           ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_ios_rounded,
+              size: 20, color: AppColors.textPrimary),
+        ),
+        title: Text('New Appointment', style: AppTextStyles.headlineSmall),
+        centerTitle: false,
+      ),
+      body: SafeArea(
+        child: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Selected date
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded,
+                            color: AppColors.primary, size: 18),
+                        const SizedBox(width: 10),
+                        Text(
+                          DateFormat('EEEE, dd MMM yyyy').format(widget.date),
+                          style: AppTextStyles.titleMedium
+                              .copyWith(color: AppColors.primary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Color', style: AppTextStyles.titleMedium),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: _colors.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final c = entry.value;
+                      return GestureDetector(
+                        onTap: () => setState(() => _colorIndex = i),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.only(right: 10),
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: _colorIndex == i
+                                ? Border.all(
+                                    color: AppColors.textPrimary, width: 2.5)
+                                : null,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _titleController,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      hintText: 'Title',
+                      prefixIcon:
+                          Icon(Icons.event_rounded, color: AppColors.primary),
+                    ),
+                    validator: (value) {
+                      final title = (value ?? '').trim();
+                      if (title.isEmpty) {
+                        return 'Appointment title is required.';
+                      }
+                      if (title.length > 20) {
+                        return 'Appointment title must be 20 characters or less.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _locationController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      hintText: 'Location (optional)',
+                      prefixIcon: Icon(Icons.location_on_rounded,
+                          color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _timeBox(
+                          icon: Icons.access_time_rounded,
+                          label: 'Start',
+                          value: _startTime.format(context),
+                          onTap: () => _pickTime(isStart: true),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _timeBox(
+                          icon: Icons.access_time_filled_rounded,
+                          label: 'End',
+                          value: _endTime.format(context),
+                          onTap: () => _pickTime(isStart: false),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  GradientButton(
+                    label: _isSaving ? 'Scheduling...' : 'Schedule Appointment',
+                    onTap: _save,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -772,11 +1008,110 @@ class _AddAppointmentSheetState extends State<_AddAppointmentSheet> {
 
 // ─── Calendar Settings Sheet ──────────────────────────────────────────────────
 
-class _CalendarSettingsSheet extends StatelessWidget {
+class _CalendarSettingsSheet extends ConsumerWidget {
   const _CalendarSettingsSheet();
 
+  String _formatReminder(int minutes) {
+    if (minutes <= 0) return 'No reminder';
+    if (minutes < 60) return '$minutes min';
+    final hours = minutes ~/ 60;
+    final mins = minutes % 60;
+    if (mins == 0) return '$hours hour${hours > 1 ? 's' : ''}';
+    return '$hours hour${hours > 1 ? 's' : ''} $mins min';
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(calendarSettingsProvider);
+
+    Future<void> pickReminder() async {
+      final selected = await showDialog<int>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Default reminder'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RadioListTile<int>(
+                  value: 0,
+                  groupValue: settings.reminderMinutes,
+                  title: const Text('No reminder'),
+                  onChanged: (value) => Navigator.pop(dialogContext, value),
+                ),
+                RadioListTile<int>(
+                  value: 5,
+                  groupValue: settings.reminderMinutes,
+                  title: const Text('5 minutes'),
+                  onChanged: (value) => Navigator.pop(dialogContext, value),
+                ),
+                RadioListTile<int>(
+                  value: 10,
+                  groupValue: settings.reminderMinutes,
+                  title: const Text('10 minutes'),
+                  onChanged: (value) => Navigator.pop(dialogContext, value),
+                ),
+                RadioListTile<int>(
+                  value: 15,
+                  groupValue: settings.reminderMinutes,
+                  title: const Text('15 minutes'),
+                  onChanged: (value) => Navigator.pop(dialogContext, value),
+                ),
+                RadioListTile<int>(
+                  value: 30,
+                  groupValue: settings.reminderMinutes,
+                  title: const Text('30 minutes'),
+                  onChanged: (value) => Navigator.pop(dialogContext, value),
+                ),
+                RadioListTile<int>(
+                  value: 60,
+                  groupValue: settings.reminderMinutes,
+                  title: const Text('1 hour'),
+                  onChanged: (value) => Navigator.pop(dialogContext, value),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      if (selected == null || !context.mounted) return;
+      await ref.read(calendarSettingsProvider.notifier).setReminder(selected);
+    }
+
+    Future<void> pickWorkingHours() async {
+      final startTime = await showTimePicker(
+        context: context,
+        initialTime: settings.workStart,
+      );
+      if (startTime == null || !context.mounted) return;
+
+      final endTime = await showTimePicker(
+        context: context,
+        initialTime: settings.workEnd,
+      );
+      if (endTime == null || !context.mounted) return;
+
+      final startMinutes = startTime.hour * 60 + startTime.minute;
+      final endMinutes = endTime.hour * 60 + endTime.minute;
+
+      if (endMinutes <= startMinutes) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Work end time must be later than work start time.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+
+      await ref
+          .read(calendarSettingsProvider.notifier)
+          .setWorkingHours(startTime, endTime);
+    }
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -785,7 +1120,8 @@ class _CalendarSettingsSheet extends StatelessWidget {
         children: [
           Center(
             child: Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                 color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
@@ -795,27 +1131,37 @@ class _CalendarSettingsSheet extends StatelessWidget {
           const SizedBox(height: 20),
           Text('Calendar Settings', style: AppTextStyles.headlineSmall),
           const SizedBox(height: 20),
+          // ListTile(
+          //   leading: const Icon(Icons.sync_rounded, color: AppColors.primary),
+          //   title: const Text('Sync with Google Calendar'),
+          //   trailing: Switch(
+          //     value: settings.syncGoogle,
+          //     onChanged: (value) async {
+          //       await ref
+          //           .read(calendarSettingsProvider.notifier)
+          //           .setSync(value);
+          //     },
+          //   ),
+          //   contentPadding: EdgeInsets.zero,
+          // ),
           ListTile(
-            leading: const Icon(Icons.sync_rounded, color: AppColors.primary),
-            title: const Text('Sync with Google Calendar'),
-            trailing: Switch(value: true, onChanged: (v) {}),
-            contentPadding: EdgeInsets.zero,
-          ),
-          ListTile(
-            leading: const Icon(Icons.notifications_active_rounded, color: AppColors.primary),
+            leading: const Icon(Icons.notifications_active_rounded,
+                color: AppColors.primary),
             title: const Text('Default Reminders'),
-            subtitle: const Text('15 minutes before'),
+            subtitle: Text(_formatReminder(settings.reminderMinutes)),
             trailing: const Icon(Icons.chevron_right_rounded),
             contentPadding: EdgeInsets.zero,
-            onTap: () {},
+            onTap: pickReminder,
           ),
           ListTile(
-            leading: const Icon(Icons.schedule_rounded, color: AppColors.primary),
+            leading:
+                const Icon(Icons.schedule_rounded, color: AppColors.primary),
             title: const Text('Working Hours'),
-            subtitle: const Text('9:00 AM - 5:00 PM'),
+            subtitle: Text(
+                '${settings.workStart.format(context)} - ${settings.workEnd.format(context)}'),
             trailing: const Icon(Icons.chevron_right_rounded),
             contentPadding: EdgeInsets.zero,
-            onTap: () {},
+            onTap: pickWorkingHours,
           ),
           const SizedBox(height: 16),
         ],

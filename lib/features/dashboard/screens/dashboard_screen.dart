@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../auth/auth_service.dart';
+import '../../../data/providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/models/note_model.dart';
 import '../../../data/models/task_model.dart';
 import '../../../data/models/project_model.dart';
 import '../../../data/models/expense_model.dart';
+import '../../../data/models/workspace_model.dart';
 import '../../../data/providers/notes_provider.dart';
 import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
@@ -100,7 +102,7 @@ class DashboardScreen extends ConsumerWidget {
     return Scaffold(
       key: _dashboardScaffoldKey,
       backgroundColor: AppColors.background,
-      endDrawer: _buildAccountDrawer(context),
+      endDrawer: _buildAccountDrawer(context, ref),
       body: CustomScrollView(
         slivers: [
           // ─── App Bar ──────────────────────────────────────────────
@@ -422,8 +424,19 @@ class DashboardScreen extends ConsumerWidget {
                         label: 'Settings',
                         color: AppColors.textSecondary,
                         bg: AppColors.surfaceVariant,
-                        onTap: () =>
-                            _showWorkspaceSettings(context, workspace, ref),
+                        onTap: () {
+                          if (workspace == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Select a workspace to open its settings.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                          _showWorkspaceSettings(context, workspace, ref);
+                        },
                       ),
                     ],
                   ),
@@ -605,7 +618,7 @@ class DashboardScreen extends ConsumerWidget {
   }
 
   void _showWorkspaceSettings(
-      BuildContext context, dynamic workspace, WidgetRef ref) {
+      BuildContext context, WorkspaceModel workspace, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -614,7 +627,7 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildAccountDrawer(BuildContext context) {
+  Widget _buildAccountDrawer(BuildContext context, WidgetRef ref) {
     return Drawer(
       child: SafeArea(
         child: Padding(
@@ -657,11 +670,17 @@ class DashboardScreen extends ConsumerWidget {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    await AuthService.logout();
-                    if (!context.mounted) {
-                      return;
-                    }
+                    final confirmed = await _confirmLogout(context);
+                    if (!confirmed || !context.mounted) return;
                     Navigator.pop(context);
+                    await ref.read(authProvider.notifier).logout();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Logged out successfully.'),
+                        backgroundColor: AppColors.accentGreen,
+                      ),
+                    );
                     context.go('/login');
                   },
                   icon: const Icon(Icons.logout_rounded),
@@ -680,6 +699,27 @@ class DashboardScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<bool> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
   }
 }
 
@@ -1229,6 +1269,7 @@ class _DashboardAddNoteSheet extends StatefulWidget {
 }
 
 class _DashboardAddNoteSheetState extends State<_DashboardAddNoteSheet> {
+  final _formKey = GlobalKey<FormState>();
   final _titleCtrl = TextEditingController();
   final _contentCtrl = TextEditingController();
   int _colorIndex = 0;
@@ -1243,78 +1284,111 @@ class _DashboardAddNoteSheetState extends State<_DashboardAddNoteSheet> {
   ];
 
   @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _contentCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveNote() async {
+    if (!_formKey.currentState!.validate()) return;
+    final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
+    if (wsId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a workspace before saving.')),
+      );
+      return;
+    }
+
+    try {
+      final note = NoteModel.create(
+        workspaceId: wsId,
+        title: _titleCtrl.text.trim(),
+        content: _contentCtrl.text.trim(),
+        colorValue: _colors[_colorIndex].value,
+      );
+      await widget.parentRef.read(notesProvider.notifier).addNote(note);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Note created successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to save note: $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Padding(
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 20),
+              Text('New Note', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 14),
+              Row(
+                  children: _colors.asMap().entries.map((entry) {
+                return GestureDetector(
+                  onTap: () => setState(() => _colorIndex = entry.key),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.only(right: 8),
+                    width: 28,
+                    height: 28,
                     decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text('New Note', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 14),
-            Row(
-                children: _colors.asMap().entries.map((entry) {
-              return GestureDetector(
-                onTap: () => setState(() => _colorIndex = entry.key),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.only(right: 8),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: entry.value,
-                    shape: BoxShape.circle,
-                    border: _colorIndex == entry.key
-                        ? Border.all(color: AppColors.primary, width: 2.5)
-                        : null,
+                      color: entry.value,
+                      shape: BoxShape.circle,
+                      border: _colorIndex == entry.key
+                          ? Border.all(color: AppColors.primary, width: 2.5)
+                          : null,
+                    ),
                   ),
-                ),
-              );
-            }).toList()),
-            const SizedBox(height: 14),
-            TextField(
-                controller: _titleCtrl,
-                decoration: const InputDecoration(
-                    hintText: 'Title',
-                    prefixIcon:
-                        Icon(Icons.title_rounded, color: AppColors.primary))),
-            const SizedBox(height: 12),
-            TextField(
-                controller: _contentCtrl,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                    hintText: 'Write your note...',
-                    prefixIcon:
-                        Icon(Icons.notes_rounded, color: AppColors.primary))),
-            const SizedBox(height: 24),
-            GradientButton(
-                label: 'Save Note',
-                onTap: () {
-                  if (_titleCtrl.text.trim().isEmpty) return;
-                  final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
-                  if (wsId == null) return;
-                  final note = NoteModel.create(
-                    workspaceId: wsId,
-                    title: _titleCtrl.text.trim(),
-                    content: _contentCtrl.text.trim(),
-                    colorValue: _colors[_colorIndex].value,
-                  );
-                  widget.parentRef.read(notesProvider.notifier).addNote(note);
-                  Navigator.pop(context);
-                }),
-            const SizedBox(height: 8),
-          ],
+                );
+              }).toList()),
+              const SizedBox(height: 14),
+              TextFormField(
+                  controller: _titleCtrl,
+                  decoration: const InputDecoration(
+                      hintText: 'Title',
+                      prefixIcon:
+                          Icon(Icons.title_rounded, color: AppColors.primary)),
+                  validator: (value) => (value ?? '').trim().isEmpty
+                      ? 'Title is required.'
+                      : null),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: _contentCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                      hintText: 'Write your note...',
+                      prefixIcon:
+                          Icon(Icons.notes_rounded, color: AppColors.primary))),
+              const SizedBox(height: 24),
+              GradientButton(label: 'Save Note', onTap: _saveNote),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -1338,9 +1412,11 @@ class _DashboardAddExpenseSheet extends StatefulWidget {
 }
 
 class _DashboardAddExpenseSheetState extends State<_DashboardAddExpenseSheet> {
+  final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _amountController = TextEditingController();
   late String _projectId;
+  String _type = 'expense';
 
   @override
   void initState() {
@@ -1355,6 +1431,49 @@ class _DashboardAddExpenseSheetState extends State<_DashboardAddExpenseSheet> {
     super.dispose();
   }
 
+  Future<void> _saveExpense() async {
+    if (!_formKey.currentState!.validate()) return;
+    final project =
+        widget.projects.where((item) => item.id == _projectId).firstOrNull;
+    if (project == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a valid project before adding an expense.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final expense = ExpenseModel.create(
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        title: _titleController.text.trim(),
+        amount: double.parse(_amountController.text.trim()),
+        type: _type,
+      );
+      await widget.parentRef.read(expensesProvider.notifier).add(expense);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_type == 'income' ? 'Income' : 'Expense'} added successfully.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to add expense: $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -1363,85 +1482,145 @@ class _DashboardAddExpenseSheetState extends State<_DashboardAddExpenseSheet> {
       child: SingleChildScrollView(
         child: Container(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text('Add Expense', style: AppTextStyles.headlineSmall),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _amountController,
-                autofocus: true,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  hintText: 'Amount (₹)',
-                  prefixIcon: Icon(Icons.currency_rupee_rounded,
-                      color: AppColors.primary),
+                const SizedBox(height: 20),
+                Text('Add Transaction', style: AppTextStyles.headlineSmall),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _type = 'expense'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _type == 'expense'
+                                ? AppColors.accentRed.withOpacity(0.12)
+                                : AppColors.surfaceVariant,
+                            border: _type == 'expense'
+                                ? Border.all(
+                                    color: AppColors.accentRed, width: 2)
+                                : null,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Expense',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                color: _type == 'expense'
+                                    ? AppColors.accentRed
+                                    : AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _type = 'income'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: _type == 'income'
+                                ? AppColors.accentGreen.withOpacity(0.12)
+                                : AppColors.surfaceVariant,
+                            border: _type == 'income'
+                                ? Border.all(
+                                    color: AppColors.accentGreen, width: 2)
+                                : null,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Text(
+                              'Income',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                color: _type == 'income'
+                                    ? AppColors.accentGreen
+                                    : AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  hintText: 'Expense title',
-                  prefixIcon:
-                      Icon(Icons.label_rounded, color: AppColors.primary),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _amountController,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    hintText: 'Amount (₹)',
+                    prefixIcon: Icon(Icons.currency_rupee_rounded,
+                        color: AppColors.primary),
+                  ),
+                  validator: (value) {
+                    final amount = double.tryParse((value ?? '').trim());
+                    if (amount == null || amount <= 0) {
+                      return 'Enter an amount greater than zero.';
+                    }
+                    return null;
+                  },
                 ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _projectId,
-                decoration: const InputDecoration(
-                  hintText: 'Project',
-                  prefixIcon:
-                      Icon(Icons.folder_rounded, color: AppColors.primary),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    hintText: 'Transaction title',
+                    prefixIcon:
+                        Icon(Icons.label_rounded, color: AppColors.primary),
+                  ),
+                  validator: (value) => (value ?? '').trim().isEmpty
+                      ? 'Transaction title is required.'
+                      : null,
                 ),
-                items: widget.projects
-                    .map((project) => DropdownMenuItem(
-                          value: project.id,
-                          child: Text(project.name),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setState(() => _projectId = value);
-                },
-              ),
-              const SizedBox(height: 24),
-              GradientButton(
-                label: 'Add Expense',
-                onTap: () {
-                  final amount = double.tryParse(_amountController.text);
-                  if (_titleController.text.trim().isEmpty ||
-                      amount == null ||
-                      amount <= 0) {
-                    return;
-                  }
-                  final project = widget.projects
-                      .firstWhere((item) => item.id == _projectId);
-                  final expense = ExpenseModel.create(
-                    workspaceId: project.workspaceId,
-                    projectId: project.id,
-                    title: _titleController.text.trim(),
-                    amount: amount,
-                  );
-                  widget.parentRef.read(expensesProvider.notifier).add(expense);
-                  Navigator.pop(context);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _projectId,
+                  decoration: const InputDecoration(
+                    hintText: 'Project',
+                    prefixIcon:
+                        Icon(Icons.folder_rounded, color: AppColors.primary),
+                  ),
+                  items: widget.projects
+                      .map((project) => DropdownMenuItem(
+                            value: project.id,
+                            child: Text(project.name),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _projectId = value);
+                  },
+                ),
+                const SizedBox(height: 24),
+                GradientButton(
+                  label: 'Add Transaction',
+                  onTap: _saveExpense,
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         ),
       ),
@@ -1460,9 +1639,51 @@ class _DashboardAddTaskSheet extends StatefulWidget {
 }
 
 class _DashboardAddTaskSheetState extends State<_DashboardAddTaskSheet> {
+  final _formKey = GlobalKey<FormState>();
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   String _priority = 'medium';
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveTask() async {
+    if (!_formKey.currentState!.validate()) return;
+    final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
+    if (wsId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a workspace before saving.')),
+      );
+      return;
+    }
+
+    try {
+      final task = TaskModel.create(
+        workspaceId: wsId,
+        title: _titleCtrl.text.trim(),
+        description: _descCtrl.text.trim(),
+        priority: _priority,
+      );
+      await widget.parentRef.read(tasksProvider.notifier).addTask(task);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task created successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to create task: $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1471,91 +1692,89 @@ class _DashboardAddTaskSheetState extends State<_DashboardAddTaskSheet> {
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text('New Task', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 16),
-            TextField(
-                controller: _titleCtrl,
-                decoration: const InputDecoration(
-                    hintText: 'Task Title',
-                    prefixIcon: Icon(Icons.task_alt_rounded,
-                        color: AppColors.primary))),
-            const SizedBox(height: 12),
-            TextField(
-                controller: _descCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                    hintText: 'Description (optional)',
-                    prefixIcon:
-                        Icon(Icons.notes_rounded, color: AppColors.primary))),
-            const SizedBox(height: 12),
-            Row(
-              children: ['low', 'medium', 'high'].map((p) {
-                final isSelected = _priority == p;
-                final color = p == 'high'
-                    ? AppColors.accentRed
-                    : p == 'medium'
-                        ? AppColors.accentOrange
-                        : AppColors.accentGreen;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _priority = p),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? color.withOpacity(0.12)
-                              : AppColors.surfaceVariant,
-                          border: isSelected
-                              ? Border.all(color: color, width: 2)
-                              : null,
-                          borderRadius: BorderRadius.circular(10),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 20),
+              Text('New Task', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 16),
+              TextFormField(
+                  controller: _titleCtrl,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  decoration: const InputDecoration(
+                      hintText: 'Task Title',
+                      prefixIcon: Icon(Icons.task_alt_rounded,
+                          color: AppColors.primary)),
+                  validator: (value) {
+                    final title = (value ?? '').trim();
+                    if (title.isEmpty) return 'Task title is required.';
+                    if (title.length > 20) {
+                      return 'Task title must be 20 characters or less.';
+                    }
+                    return null;
+                  }),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: _descCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                      hintText: 'Description (optional)',
+                      prefixIcon:
+                          Icon(Icons.notes_rounded, color: AppColors.primary))),
+              const SizedBox(height: 12),
+              Row(
+                children: ['low', 'medium', 'high'].map((p) {
+                  final isSelected = _priority == p;
+                  final color = p == 'high'
+                      ? AppColors.accentRed
+                      : p == 'medium'
+                          ? AppColors.accentOrange
+                          : AppColors.accentGreen;
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _priority = p),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? color.withOpacity(0.12)
+                                : AppColors.surfaceVariant,
+                            border: isSelected
+                                ? Border.all(color: color, width: 2)
+                                : null,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Center(
+                              child: Text(p.toUpperCase(),
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                      color: isSelected
+                                          ? color
+                                          : AppColors.textSecondary,
+                                      fontWeight: FontWeight.w700))),
                         ),
-                        child: Center(
-                            child: Text(p.toUpperCase(),
-                                style: AppTextStyles.labelMedium.copyWith(
-                                    color: isSelected
-                                        ? color
-                                        : AppColors.textSecondary,
-                                    fontWeight: FontWeight.w700))),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-            GradientButton(
-                label: 'Create Task',
-                onTap: () {
-                  if (_titleCtrl.text.trim().isEmpty) return;
-                  final wsId = widget.parentRef.read(activeWorkspaceIdProvider);
-                  if (wsId == null) return;
-                  final task = TaskModel.create(
-                    workspaceId: wsId,
-                    title: _titleCtrl.text.trim(),
-                    description: _descCtrl.text.trim(),
-                    priority: _priority,
                   );
-                  widget.parentRef.read(tasksProvider.notifier).addTask(task);
-                  Navigator.pop(context);
-                }),
-            const SizedBox(height: 8),
-          ],
+                }).toList(),
+              ),
+              const SizedBox(height: 24),
+              GradientButton(label: 'Create Task', onTap: _saveTask),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -1564,16 +1783,70 @@ class _DashboardAddTaskSheetState extends State<_DashboardAddTaskSheet> {
 
 // ─── Search Sheet ─────────────────────────────────────────────────────────────
 
-class _SearchSheet extends StatelessWidget {
+class _SearchSheet extends ConsumerStatefulWidget {
   const _SearchSheet();
 
   @override
+  ConsumerState<_SearchSheet> createState() => _SearchSheetState();
+}
+
+class _SearchSheetState extends ConsumerState<_SearchSheet> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final projects = ref.watch(workspaceProjectsProvider);
+    final tasks = ref.watch(workspaceTasksProvider);
+    final notes = ref.watch(workspaceNotesProvider);
+    final query = _query.trim().toLowerCase();
+
+    final results = <_DashboardSearchResult>[
+      ...projects
+          .where((project) =>
+              query.isNotEmpty && project.name.toLowerCase().contains(query))
+          .map((project) => _DashboardSearchResult(
+                title: project.name,
+                subtitle: 'Project',
+                icon: Icons.folder_rounded,
+                color: AppColors.primary,
+                route: '/home/projects/${project.id}',
+              )),
+      ...tasks
+          .where((task) =>
+              query.isNotEmpty &&
+              '${task.title} ${task.description}'.toLowerCase().contains(query))
+          .map((task) => _DashboardSearchResult(
+                title: task.title,
+                subtitle: 'Task',
+                icon: Icons.task_alt_rounded,
+                color: AppColors.accentBlue,
+                route: '/home/tasks/${task.id}',
+              )),
+      ...notes
+          .where((note) =>
+              query.isNotEmpty &&
+              '${note.title} ${note.content}'.toLowerCase().contains(query))
+          .map((note) => _DashboardSearchResult(
+                title: note.title,
+                subtitle: 'Note',
+                icon: Icons.sticky_note_2_rounded,
+                color: AppColors.accentOrange,
+                route: '/home/notes/${note.id}',
+              )),
+    ];
+
     return Padding(
       padding:
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        height: MediaQuery.of(context).size.height * 0.7,
+        height: MediaQuery.of(context).size.height * 0.75,
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
@@ -1586,11 +1859,23 @@ class _SearchSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
             TextField(
+              controller: _searchController,
               autofocus: true,
+              onChanged: (value) => setState(() => _query = value),
               decoration: InputDecoration(
                 hintText: 'Search tasks, projects, notes...',
                 prefixIcon:
                     const Icon(Icons.search_rounded, color: AppColors.primary),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
                 filled: true,
                 fillColor: AppColors.surfaceVariant,
                 border: OutlineInputBorder(
@@ -1599,24 +1884,66 @@ class _SearchSheet extends StatelessWidget {
                 ),
               ),
             ),
-            const Spacer(),
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.manage_search_rounded,
-                    size: 64, color: AppColors.textTertiary.withOpacity(0.5)),
-                const SizedBox(height: 16),
-                Text('Start typing to search',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: AppColors.textSecondary)),
-              ],
+            const SizedBox(height: 12),
+            Expanded(
+              child: query.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Start typing to search this workspace',
+                        style: AppTextStyles.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  : results.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No matching tasks, projects, or notes.',
+                            style: AppTextStyles.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: results.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final result = results[index];
+                            return ListTile(
+                              leading: Icon(result.icon, color: result.color),
+                              title: Text(
+                                result.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(result.subtitle),
+                              onTap: () {
+                                Navigator.pop(context);
+                                context.go(result.route);
+                              },
+                            );
+                          },
+                        ),
             ),
-            const Spacer(),
           ],
         ),
       ),
     );
   }
+}
+
+class _DashboardSearchResult {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final String route;
+
+  const _DashboardSearchResult({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.route,
+  });
 }
 
 // ─── Notifications Sheet ──────────────────────────────────────────────────────
@@ -1695,7 +2022,7 @@ class _NotificationsSheet extends StatelessWidget {
 // ─── Workspace Settings Sheet ─────────────────────────────────────────────────
 
 class _WorkspaceSettingsSheet extends StatefulWidget {
-  final dynamic workspace;
+  final WorkspaceModel workspace;
   final WidgetRef parentRef;
 
   const _WorkspaceSettingsSheet(
@@ -1707,11 +2034,13 @@ class _WorkspaceSettingsSheet extends StatefulWidget {
 }
 
 class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
+  final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
   late TextEditingController _descCtrl;
   late String _selectedEmoji;
   late int _selectedColorIndex;
   late String _selectedIndustry;
+  bool _isSaving = false;
 
   final List<String> _emojis = [
     '🏢',
@@ -1751,6 +2080,51 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
   }
 
   @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveSettings() async {
+    if (!_formKey.currentState!.validate() || _isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final updated = widget.workspace.copyWith(
+        name: _nameCtrl.text.trim(),
+        description: _descCtrl.text.trim(),
+        emoji: _selectedEmoji,
+        colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
+        industry: _selectedIndustry,
+      );
+      final synced = await widget.parentRef
+          .read(workspacesProvider.notifier)
+          .updateWorkspace(updated);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            synced
+                ? 'Workspace settings saved.'
+                : 'Settings saved on this device; server sync failed.',
+          ),
+          backgroundColor: synced ? null : AppColors.accentOrange,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to save workspace settings: $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final industryOptions = {..._industries, _selectedIndustry};
 
@@ -1759,134 +2133,135 @@ class _WorkspaceSettingsSheetState extends State<_WorkspaceSettingsSheet> {
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                  child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 20),
-              Text('Workspace Settings', style: AppTextStyles.headlineSmall),
-              const SizedBox(height: 20),
-              Text('Icon', style: AppTextStyles.labelLarge),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 52,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _emojis.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (_, i) => GestureDetector(
-                    onTap: () => setState(() => _selectedEmoji = _emojis[i]),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: _selectedEmoji == _emojis[i]
-                            ? AppColors.primary.withOpacity(0.12)
-                            : AppColors.surfaceVariant,
-                        border: _selectedEmoji == _emojis[i]
-                            ? Border.all(color: AppColors.primary, width: 2)
-                            : null,
-                        borderRadius: BorderRadius.circular(12),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                    child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 20),
+                Text('Workspace Settings', style: AppTextStyles.headlineSmall),
+                const SizedBox(height: 20),
+                Text('Icon', style: AppTextStyles.labelLarge),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 52,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _emojis.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) => GestureDetector(
+                      onTap: () => setState(() => _selectedEmoji = _emojis[i]),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _selectedEmoji == _emojis[i]
+                              ? AppColors.primary.withOpacity(0.12)
+                              : AppColors.surfaceVariant,
+                          border: _selectedEmoji == _emojis[i]
+                              ? Border.all(color: AppColors.primary, width: 2)
+                              : null,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                            child: Text(_emojis[i],
+                                style: const TextStyle(fontSize: 24))),
                       ),
-                      child: Center(
-                          child: Text(_emojis[i],
-                              style: const TextStyle(fontSize: 24))),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text('Color Theme', style: AppTextStyles.labelLarge),
-              const SizedBox(height: 10),
-              Row(
-                children: List.generate(AppColors.workspaceColors.length, (i) {
-                  final c = AppColors.workspaceColors[i];
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _selectedColorIndex = i),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: c,
-                          shape: BoxShape.circle,
-                          border: _selectedColorIndex == i
-                              ? Border.all(
-                                  color: AppColors.textPrimary, width: 2.5)
-                              : null,
+                const SizedBox(height: 16),
+                Text('Color Theme', style: AppTextStyles.labelLarge),
+                const SizedBox(height: 10),
+                Row(
+                  children:
+                      List.generate(AppColors.workspaceColors.length, (i) {
+                    final c = AppColors.workspaceColors[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedColorIndex = i),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: _selectedColorIndex == i
+                                ? Border.all(
+                                    color: AppColors.textPrimary, width: 2.5)
+                                : null,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _nameCtrl,
-                decoration: const InputDecoration(
-                  hintText: 'Workspace Name',
-                  prefixIcon:
-                      Icon(Icons.business_rounded, color: AppColors.primary),
+                    );
+                  }),
                 ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _selectedIndustry,
-                decoration: const InputDecoration(
-                  hintText: 'Industry',
-                  prefixIcon:
-                      Icon(Icons.category_rounded, color: AppColors.primary),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _nameCtrl,
+                  enabled: !_isSaving,
+                  decoration: const InputDecoration(
+                    hintText: 'Workspace Name',
+                    prefixIcon:
+                        Icon(Icons.business_rounded, color: AppColors.primary),
+                  ),
+                  validator: (value) => (value ?? '').trim().isEmpty
+                      ? 'Workspace name is required.'
+                      : null,
                 ),
-                items: industryOptions
-                    .map(
-                        (ind) => DropdownMenuItem(value: ind, child: Text(ind)))
-                    .toList(),
-                onChanged: (val) =>
-                    setState(() => _selectedIndustry = val ?? 'General'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _descCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  hintText: 'Description',
-                  prefixIcon:
-                      Icon(Icons.notes_rounded, color: AppColors.primary),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _selectedIndustry,
+                  decoration: const InputDecoration(
+                    hintText: 'Industry',
+                    prefixIcon:
+                        Icon(Icons.category_rounded, color: AppColors.primary),
+                  ),
+                  items: industryOptions
+                      .map((ind) =>
+                          DropdownMenuItem(value: ind, child: Text(ind)))
+                      .toList(),
+                  onChanged: _isSaving
+                      ? null
+                      : (val) =>
+                          setState(() => _selectedIndustry = val ?? 'General'),
                 ),
-              ),
-              const SizedBox(height: 24),
-              GradientButton(
-                label: 'Save Settings',
-                onTap: () {
-                  if (_nameCtrl.text.trim().isEmpty) return;
-                  final updated = widget.workspace.copyWith(
-                    name: _nameCtrl.text.trim(),
-                    description: _descCtrl.text.trim(),
-                    emoji: _selectedEmoji,
-                    colorValue:
-                        AppColors.workspaceColors[_selectedColorIndex].value,
-                    industry: _selectedIndustry,
-                    updatedAt: DateTime.now(),
-                  );
-                  widget.parentRef
-                      .read(workspacesProvider.notifier)
-                      .updateWorkspace(updated);
-                  Navigator.pop(context);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _descCtrl,
+                  maxLines: 2,
+                  enabled: !_isSaving,
+                  decoration: const InputDecoration(
+                    hintText: 'Description',
+                    prefixIcon:
+                        Icon(Icons.notes_rounded, color: AppColors.primary),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (_isSaving)
+                  const Center(
+                      child:
+                          CircularProgressIndicator(color: AppColors.primary))
+                else
+                  GradientButton(
+                    label: 'Save Settings',
+                    onTap: _saveSettings,
+                  ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         ),
       ),

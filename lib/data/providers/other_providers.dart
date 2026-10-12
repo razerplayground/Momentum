@@ -37,16 +37,16 @@ final dayAppointmentsProvider = Provider<List<AppointmentModel>>((ref) {
 /// Returns all appointments in the month currently shown in the month-grid view.
 /// Used to render appointment-indicator dots on each day cell.
 final monthAppointmentsProvider = Provider<List<AppointmentModel>>((ref) {
-  final appointments = ref.watch(appointmentsProvider);
-  final activeId = ref.watch(activeWorkspaceIdProvider);
+  final appointments = ref.watch(workspaceAppointmentsProvider);
   final viewedMonth = ref.watch(viewedMonthProvider);
-  if (activeId == null) return [];
-  return appointments
-      .where((a) =>
-          a.workspaceId == activeId &&
-          a.startTime.year == viewedMonth.year &&
-          a.startTime.month == viewedMonth.month)
-      .toList();
+
+  return appointments.where((a) {
+    final firstOfMonth = DateTime(viewedMonth.year, viewedMonth.month, 1);
+    final lastOfMonth =
+        DateTime(viewedMonth.year, viewedMonth.month + 1, 0, 23, 59, 59, 999);
+    return !a.endTime.isBefore(firstOfMonth) &&
+        !a.startTime.isAfter(lastOfMonth);
+  }).toList();
 });
 
 final workspaceAppointmentsProvider = Provider<List<AppointmentModel>>((ref) {
@@ -279,9 +279,8 @@ class ExpenseNotifier extends StateNotifier<List<ExpenseModel>> {
   Future<void> update(ExpenseModel expense) async {
     final box = Hive.box<ExpenseModel>(AppConstants.expenseBox);
     await box.put(expense.id, expense);
-    state = state
-        .map((item) => item.id == expense.id ? expense : item)
-        .toList();
+    state =
+        state.map((item) => item.id == expense.id ? expense : item).toList();
   }
 
   Future<void> toggleCompletion(String id) async {

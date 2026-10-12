@@ -33,9 +33,20 @@ final apiServiceProvider = Provider<ApiService>((ref) {
 class ApiService {
   final http.Client _client;
 
+  /// Called when the session can no longer be refreshed (user must log in again).
+  static void Function()? onSessionExpired;
+  static bool _expiredNotified = false;
+
+  /// Notify only once, even if many requests fail at the same time.
+  void _notifySessionExpired() {
+    if (_expiredNotified) return;
+    _expiredNotified = true;
+    onSessionExpired?.call();
+  }
+
   ApiService({http.Client? client}) : _client = client ?? http.Client();
 
-  // â”€â”€â”€ Token Management Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- Token Management Helpers ---
 
   Box get _settingsBox => Hive.box(AppConstants.settingsBox);
 
@@ -45,15 +56,27 @@ class ApiService {
       _settingsBox.get(ApiConstants.refreshTokenKey) as String?;
 
   Future<void> saveTokens({required String access, String? refresh}) async {
+    _expiredNotified = false;
     await _settingsBox.put(ApiConstants.accessTokenKey, access);
     if (refresh != null) {
       await _settingsBox.put(ApiConstants.refreshTokenKey, refresh);
     }
   }
 
-  Future<void> saveUserData(UserModel user) async {
-    await _settingsBox.put(ApiConstants.userDataKey, jsonEncode(user.toJson()));
+Future<void> saveUserData(UserModel user) async {
+  await _settingsBox.put(ApiConstants.userDataKey, jsonEncode(user.toJson()));
+
+  final email = user.email.trim().toLowerCase();
+  final isOrg = user.plan?.trim().toLowerCase() == 'organization' ||
+      (user.organizationName?.trim().isNotEmpty ?? false);
+  if (email.isNotEmpty && isOrg) {
+    await _settingsBox.put('account_plan_$email', 'organization');
+    final org = user.organizationName?.trim();
+    if (org != null && org.isNotEmpty) {
+      await _settingsBox.put('account_org_$email', org);
+    }
   }
+}
 
   UserModel? getSavedUserData() {
     final raw = _settingsBox.get(ApiConstants.userDataKey) as String?;
@@ -89,7 +112,7 @@ class ApiService {
     return uri;
   }
 
-  // â”€â”€â”€ Core HTTP Handler with Automatic Token Refresh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- Core HTTP Handler with Automatic Token Refresh ---
 
   Future<dynamic> _sendRequest(
     String method,
@@ -140,13 +163,10 @@ class ApiService {
       throw ApiException('Network error or server unreachable: $e');
     }
 
-    // Handle 401 Unauthorized token refresh logic
-    if (response.statusCode == 401 &&
-        requiresAuth &&
-        !isRetry &&
-        refreshToken != null) {
-      final refreshed = await _attemptTokenRefresh();
-      if (refreshed) {
+    // Some API routes incorrectly report expired sessions as 400 Unauthorized.
+    if (_isUnauthorizedResponse(response) && requiresAuth && !isRetry) {
+      final hasRefresh = (refreshToken ?? '').isNotEmpty;
+      if (hasRefresh && await _attemptTokenRefresh()) {
         return _sendRequest(
           method,
           endpoint,
@@ -155,20 +175,36 @@ class ApiService {
           requiresAuth: requiresAuth,
           isRetry: true,
         );
-      } else {
-        await clearSession();
-        throw ApiException('Session expired. Please log in again.',
-            statusCode: 401);
       }
+      await clearSession();
+      _notifySessionExpired();
+      throw ApiException('Session expired. Please log in again.',
+          statusCode: 401);
     }
 
     return _processResponse(response);
   }
 
+  bool _isUnauthorizedResponse(http.Response response) {
+    if (response.statusCode == 401) return true;
+    if (response.statusCode != 400 || response.body.isEmpty) return false;
+
+    try {
+      final decodedBody = jsonDecode(response.body);
+      if (decodedBody is! Map<String, dynamic>) return false;
+      final message = decodedBody['message'] ?? decodedBody['error'];
+      return message is String &&
+          message.trim().toLowerCase() == 'unauthorized';
+    } on FormatException {
+      return false;
+    }
+  }
+
   Future<bool> _attemptTokenRefresh() async {
     final currentRefreshToken = refreshToken;
-    if (currentRefreshToken == null || currentRefreshToken.isEmpty)
+    if (currentRefreshToken == null || currentRefreshToken.isEmpty) {
       return false;
+    }
 
     try {
       final uri = _buildUri(ApiConstants.refresh);
@@ -181,10 +217,15 @@ class ApiService {
           .timeout(ApiConstants.timeoutDuration);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final newAccess = data['accessToken'] as String?;
+        final raw = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = raw['data'] is Map<String, dynamic>
+            ? raw['data'] as Map<String, dynamic>
+            : raw;
+        final newAccess =
+            (data['accessToken'] ?? data['access_token']) as String?;
         final newRefresh =
-            data['refreshToken'] as String? ?? currentRefreshToken;
+            (data['refreshToken'] ?? data['refresh_token']) as String? ??
+                currentRefreshToken;
         if (newAccess != null) {
           await saveTokens(access: newAccess, refresh: newRefresh);
           return true;
@@ -252,7 +293,7 @@ class ApiService {
           {dynamic body, bool requiresAuth = true}) =>
       _sendRequest('DELETE', endpoint, body: body, requiresAuth: requiresAuth);
 
-  // â”€â”€â”€ AUTH SERVICES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- AUTH SERVICES ---
 
   /// Login user with email & password
   Future<Map<String, dynamic>> login({
@@ -267,17 +308,24 @@ class ApiService {
     );
 
     if (response is Map<String, dynamic>) {
-      final access = response['accessToken'] as String?;
-      final refresh = response['refreshToken'] as String?;
+      final data = response['data'] is Map<String, dynamic>
+          ? response['data'] as Map<String, dynamic>
+          : response;
+      final access = (data['accessToken'] ??
+          data['access_token'] ??
+          data['token']) as String?;
+      final refresh =
+          (data['refreshToken'] ?? data['refresh_token']) as String?;
+      debugPrint(
+          'Login tokens: access=${access != null}, refresh=${refresh != null}');
       if (access != null) {
         await saveTokens(access: access, refresh: refresh);
       }
 
       UserModel? user;
-      if (response.containsKey('user') &&
-          response['user'] is Map<String, dynamic>) {
+      if (data.containsKey('user') && data['user'] is Map<String, dynamic>) {
         user = _preserveSavedPlan(
-          UserModel.fromJson(response['user'] as Map<String, dynamic>),
+          UserModel.fromJson(data['user'] as Map<String, dynamic>),
           savedUser,
         );
         await saveUserData(user);
@@ -392,19 +440,42 @@ class ApiService {
   }
 
   UserModel _preserveSavedPlan(UserModel user, UserModel? savedUser) {
-    final plan = user.plan?.trim().isNotEmpty == true
-        ? user.plan
-        : savedUser?.plan;
+    final sameAccount = savedUser != null &&
+        (user.id.isNotEmpty && savedUser.id.isNotEmpty
+            ? user.id == savedUser.id
+            : user.email.trim().isNotEmpty &&
+                user.email.trim().toLowerCase() ==
+                    savedUser.email.trim().toLowerCase());
+    final savedPlan = sameAccount ? savedUser.plan : null;
+    final serverPlan = user.plan?.trim();
+    final keepOrganizationPlan =
+        savedPlan?.trim().toLowerCase() == 'organization' &&
+            serverPlan?.toLowerCase() == 'individual';
+    final plan = keepOrganizationPlan
+        ? savedPlan
+        : (serverPlan?.isNotEmpty == true ? user.plan : savedPlan);
     final organizationName = user.organizationName?.trim().isNotEmpty == true
         ? user.organizationName
-        : savedUser?.organizationName;
+        : (sameAccount ? savedUser.organizationName : null);
+    // Organization status remembered per email (survives logout).
+    final emailKey = user.email.trim().toLowerCase();
+    final rememberedPlan =
+        _settingsBox.get('account_plan_$emailKey') as String?;
+    final rememberedOrgName =
+        _settingsBox.get('account_org_$emailKey') as String?;
+
+    final finalPlan = rememberedPlan == 'organization' ? 'organization' : plan;
+    final finalOrgName = (organizationName?.trim().isNotEmpty ?? false)
+        ? organizationName
+        : rememberedOrgName;
+
     return user.copyWith(
-      plan: plan,
-      organizationName: organizationName,
+      plan: finalPlan,
+      organizationName: finalOrgName,
     );
   }
 
-  // â”€â”€â”€ WORKSPACE & BUSINESS SERVICES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- WORKSPACE & BUSINESS SERVICES ---
 
   /// Fetch all accessible workspaces & businesses for current user
   Future<List<WorkspaceModel>> getWorkspaces() async {
@@ -451,7 +522,7 @@ class ApiService {
     String? address,
     String? contactEmail,
     int? foundedYear,
-    String emoji = 'ðŸ¢',
+    String emoji = '\u{1F3E2}',
     int colorValue = 0xFF6C5CE7,
     String description = '',
   }) async {
@@ -481,8 +552,7 @@ class ApiService {
     return workspace.copyWith(
       emoji: emoji,
       colorValue: colorValue,
-      description:
-          description.isNotEmpty ? description : workspace.description,
+      description: description.isNotEmpty ? description : workspace.description,
     );
   }
 
@@ -700,11 +770,11 @@ class ApiService {
     if (response == null) return [];
 
     dynamic entries = response;
-    for (var depth = 0;
-        depth < 3 && entries is Map<String, dynamic>;
-        depth++) {
-      final nested =
-          entries['payroll'] ?? entries['entries'] ?? entries['items'] ?? entries['data'];
+    for (var depth = 0; depth < 3 && entries is Map<String, dynamic>; depth++) {
+      final nested = entries['payroll'] ??
+          entries['entries'] ??
+          entries['items'] ??
+          entries['data'];
       if (nested == null) {
         throw ApiException('Failed to retrieve payroll entries');
       }
@@ -798,18 +868,90 @@ class ApiService {
   }
 
   /// Export financial records in CSV format.
-  Future<dynamic> exportFinances(String businessId) {
-    return get(ApiConstants.exportFinances(businessId), requiresAuth: true);
+  Future<dynamic> exportFinances(String businessId) async {
+    try {
+      return await get(ApiConstants.exportFinances(businessId),
+          requiresAuth: true);
+    } on ApiException catch (error) {
+      if (!_exportEndpointUnavailable(error)) rethrow;
+
+      final incomeResponse =
+          await get(ApiConstants.incomeList(businessId), requiresAuth: true);
+      final expenseResponse =
+          await get(ApiConstants.expenseList(businessId), requiresAuth: true);
+      return {
+        'records': [
+          ..._exportRecordList(incomeResponse, 'income'),
+          ..._exportRecordList(expenseResponse, 'expense'),
+        ],
+      };
+    }
   }
 
   /// Export payroll records in CSV format.
-  Future<dynamic> exportPayroll(String businessId) {
-    return get(ApiConstants.exportPayroll(businessId), requiresAuth: true);
+  Future<dynamic> exportPayroll(String businessId) async {
+    try {
+      return await get(ApiConstants.exportPayroll(businessId),
+          requiresAuth: true);
+    } on ApiException catch (error) {
+      if (!_exportEndpointUnavailable(error)) rethrow;
+      return {'records': await getPayroll(businessId)};
+    }
   }
 
   /// Export employee roster in CSV format.
-  Future<dynamic> exportEmployees(String businessId) {
-    return get(ApiConstants.exportEmployees(businessId), requiresAuth: true);
+  Future<dynamic> exportEmployees(String businessId) async {
+    try {
+      return await get(ApiConstants.exportEmployees(businessId),
+          requiresAuth: true);
+    } on ApiException catch (error) {
+      if (!_exportEndpointUnavailable(error)) rethrow;
+      return {'records': await getEmployees(businessId)};
+    }
+  }
+
+  bool _exportEndpointUnavailable(ApiException error) =>
+      error.statusCode == 404 ||
+      error.statusCode == 405 ||
+      error.statusCode == 501;
+
+  List<Map<String, dynamic>> _exportRecordList(
+    dynamic response,
+    String recordType,
+  ) {
+    dynamic records = response;
+    for (var depth = 0; depth < 4 && records is Map; depth++) {
+      dynamic nested;
+      for (final key in const [
+        'records',
+        'items',
+        'data',
+        'results',
+        'transactions',
+        'income',
+        'incomes',
+        'expenses',
+      ]) {
+        if (records.containsKey(key)) {
+          nested = records[key];
+          break;
+        }
+      }
+      if (nested == null) {
+        throw ApiException('Failed to retrieve financial records');
+      }
+      records = nested;
+    }
+    if (records is! List) {
+      throw ApiException('Failed to retrieve financial records');
+    }
+    return records
+        .whereType<Map>()
+        .map((record) => {
+              ...Map<String, dynamic>.from(record),
+              'recordType': recordType,
+            })
+        .toList();
   }
 
   /// Upload a file to storage as a multipart request.
@@ -845,13 +987,12 @@ class ApiService {
       throw ApiException('Network error or server unreachable: $e');
     }
 
-    if (response.statusCode == 401 &&
-        !isRetry &&
-        refreshToken != null) {
+    if (response.statusCode == 401 && !isRetry && refreshToken != null) {
       if (await _attemptTokenRefresh()) {
         return uploadStorageFile(filename, bytes, isRetry: true);
       }
       await clearSession();
+      _notifySessionExpired();
       throw ApiException('Session expired. Please log in again.',
           statusCode: 401);
     }
@@ -868,26 +1009,23 @@ class ApiService {
 
     http.Response response;
     try {
-      response = await _client
-          .get(
-            _buildUri(ApiConstants.getFile(filename)),
-            headers: {
-              ..._buildHeaders(),
-              'Accept': '*/*',
-            },
-          )
-          .timeout(ApiConstants.timeoutDuration);
+      response = await _client.get(
+        _buildUri(ApiConstants.getFile(filename)),
+        headers: {
+          ..._buildHeaders(),
+          'Accept': '*/*',
+        },
+      ).timeout(ApiConstants.timeoutDuration);
     } catch (e) {
       throw ApiException('Network error or server unreachable: $e');
     }
 
-    if (response.statusCode == 401 &&
-        !isRetry &&
-        refreshToken != null) {
+    if (response.statusCode == 401 && !isRetry && refreshToken != null) {
       if (await _attemptTokenRefresh()) {
         return downloadStorageFile(filename, isRetry: true);
       }
       await clearSession();
+      _notifySessionExpired();
       throw ApiException('Session expired. Please log in again.',
           statusCode: 401);
     }

@@ -7,8 +7,11 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../data/models/task_model.dart';
 import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
+import '../../dashboard/dashboard_navigation_provider.dart';
 import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/priority_chip.dart';
+import 'task_form_sheet.dart';
+import '../../../data/providers/project_provider.dart';
 
 class TasksScreen extends ConsumerStatefulWidget {
   const TasksScreen({super.key});
@@ -25,6 +28,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     final allTasks = ref.watch(workspaceTasksProvider);
     final isGlobalView = ref.watch(globalViewEnabledProvider);
     final workspaces = ref.watch(workspacesProvider);
+    final projects = ref.watch(projectsProvider);
     final today = ref.watch(todayTasksProvider);
     final overdue = ref.watch(overdueTasksProvider);
 
@@ -36,18 +40,18 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                 ? overdue
                 : allTasks.where((t) => t.isCompleted).toList();
 
-final sortedTasks = [...filtered];
+    final sortedTasks = [...filtered];
 
-sortedTasks.sort((a, b) {
-  const priorityOrder = {
-    'high': 0,
-    'medium': 1,
-    'low': 2,
-  };
+    sortedTasks.sort((a, b) {
+      const priorityOrder = {
+        'high': 0,
+        'medium': 1,
+        'low': 2,
+      };
 
-  return (priorityOrder[a.priorityStr] ?? 3)
-      .compareTo(priorityOrder[b.priorityStr] ?? 3);
-});
+      return (priorityOrder[a.priorityStr] ?? 3)
+          .compareTo(priorityOrder[b.priorityStr] ?? 3);
+    });
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(
@@ -59,25 +63,29 @@ sortedTasks.sort((a, b) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Show back button when navigated as a sub-route (not as a bottom-nav tab)
-                    if (context.canPop())
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => context.pop(),
-                              child: const Icon(Icons.arrow_back_ios_rounded,
-                                  size: 20, color: AppColors.textPrimary),
-                            ),
-                            const SizedBox(width: 8),
-                            Text('Back',
-                                style: AppTextStyles.titleMedium
-                                    .copyWith(color: AppColors.textSecondary)),
-                          ],
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () {
+                            ref.read(dashboardTabIndexProvider.notifier).state =
+                                0;
+                            context.go('/home');
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
+                          icon: const Icon(
+                            Icons.arrow_back_ios_rounded,
+                            size: 20,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
-                      ),
-                    Text('Tasks', style: AppTextStyles.displaySmall),
+                        const SizedBox(width: 8),
+                        Text('Tasks', style: AppTextStyles.displaySmall),
+                      ],
+                    ),
                     const SizedBox(height: 4),
                     Text(
                         isGlobalView
@@ -131,12 +139,13 @@ sortedTasks.sort((a, b) {
             ),
           ),
           if (sortedTasks.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: EmptyState(
                 icon: Icons.task_alt_outlined,
                 title: 'No Tasks Here',
                 subtitle: 'Create tasks to track your work.',
                 actionLabel: 'New Task',
+                onAction: () => _showAddTask(context),
               ),
             )
           else
@@ -151,6 +160,10 @@ sortedTasks.sort((a, b) {
                         .where((workspace) =>
                             workspace.id == sortedTasks[i].workspaceId)
                         .map((workspace) => workspace.name)
+                        .firstOrNull,
+                    projectName: projects
+                        .where((p) => p.id == sortedTasks[i].projectId)
+                        .map((p) => p.name)
                         .firstOrNull,
                     onToggle: () => ref
                         .read(tasksProvider.notifier)
@@ -174,11 +187,7 @@ sortedTasks.sort((a, b) {
   }
 
   void _showAddTask(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _AddTaskSheet(parentRef: ref),
-    );
+    showTaskFormSheet(context, ref);
   }
 }
 
@@ -242,11 +251,13 @@ class _TaskCard extends StatelessWidget {
   final String? workspaceName;
   final VoidCallback onToggle;
   final VoidCallback onTap;
+  final String? projectName;
 
   const _TaskCard(
       {required this.task,
       required this.isGlobalView,
       required this.workspaceName,
+      required this.projectName,
       required this.onToggle,
       required this.onTap});
 
@@ -297,6 +308,24 @@ class _TaskCard extends StatelessWidget {
                         : AppColors.textPrimary,
                   ),
                 ),
+                if (projectName != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.folder_outlined,
+                          size: 13, color: AppColors.textSecondary),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          projectName!,
+                          style: AppTextStyles.labelSmall
+                              .copyWith(color: AppColors.textSecondary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (task.description.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(task.description,
@@ -366,121 +395,6 @@ class _TaskCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _AddTaskSheet extends StatefulWidget {
-  final WidgetRef parentRef;
-
-  const _AddTaskSheet({required this.parentRef});
-
-  @override
-  State<_AddTaskSheet> createState() => _AddTaskSheetState();
-}
-
-class _AddTaskSheetState extends State<_AddTaskSheet> {
-  final _titleController = TextEditingController();
-  final _descController = TextEditingController();
-  String _priority = 'medium';
-  DateTime? _dueDate;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text('New Task', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 16),
-            TextField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                    hintText: 'Task Title',
-                    prefixIcon: Icon(Icons.task_alt_rounded,
-                        color: AppColors.primary))),
-            const SizedBox(height: 12),
-            TextField(
-                controller: _descController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                    hintText: 'Description (optional)',
-                    prefixIcon:
-                        Icon(Icons.notes_rounded, color: AppColors.primary))),
-            const SizedBox(height: 12),
-            Row(
-              children: ['low', 'medium', 'high'].map((p) {
-                final isSelected = _priority == p;
-                final color = p == 'high'
-                    ? AppColors.accentRed
-                    : p == 'medium'
-                        ? AppColors.accentOrange
-                        : AppColors.accentGreen;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _priority = p),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? color.withOpacity(0.12)
-                              : AppColors.surfaceVariant,
-                          border: isSelected
-                              ? Border.all(color: color, width: 2)
-                              : null,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Center(
-                            child: Text(p.toUpperCase(),
-                                style: AppTextStyles.labelMedium.copyWith(
-                                    color: isSelected
-                                        ? color
-                                        : AppColors.textSecondary,
-                                    fontWeight: FontWeight.w700))),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-            GradientButton(
-                label: 'Create Task',
-                onTap: () {
-                  if (_titleController.text.trim().isEmpty) return;
-                  final workspaceId =
-                      widget.parentRef.read(activeWorkspaceIdProvider);
-                  if (workspaceId == null) return;
-                  final task = TaskModel.create(
-                    workspaceId: workspaceId,
-                    title: _titleController.text.trim(),
-                    description: _descController.text.trim(),
-                    priority: _priority,
-                    dueDate: _dueDate,
-                  );
-                  widget.parentRef.read(tasksProvider.notifier).addTask(task);
-                  Navigator.pop(context);
-                }),
-            const SizedBox(height: 8),
-          ],
-        ),
       ),
     );
   }

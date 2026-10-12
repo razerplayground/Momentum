@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-
+import '../../../data/providers/project_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/models/task_model.dart';
@@ -34,6 +34,7 @@ class TaskDetailScreen extends ConsumerWidget {
         body: const Center(child: Text('Task not found')),
       );
     }
+    final project = task.projectId == null ? null : ref.watch(projectByIdProvider(task.projectId!));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -68,7 +69,7 @@ class TaskDetailScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             _buildStatusStepper(ref, task),
             const SizedBox(height: 24),
-            _buildInfoSection(task),
+            _buildInfoSection(task, project?.name),
             if (task.description.isNotEmpty) ...[
               const SizedBox(height: 24),
               const SectionHeader(title: 'Description'),
@@ -257,13 +258,21 @@ class TaskDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildInfoSection(TaskModel task) {
+  Widget _buildInfoSection(TaskModel task,String? projectName) {
     final dateFormat = DateFormat('dd MMM yyyy');
     final isOverdue = task.dueDate != null && task.dueDate!.isBefore(DateTime.now()) && !task.isCompleted;
 
     return AnimatedCard(
       child: Column(
         children: [
+            if (projectName != null) ...[
+          _InfoRow(
+            icon: Icons.folder_outlined,
+            label: 'Project',
+            value: projectName,
+          ),
+          const AppDivider(),
+        ],
           _InfoRow(
             icon: Icons.calendar_today_outlined,
             label: 'Due Date',

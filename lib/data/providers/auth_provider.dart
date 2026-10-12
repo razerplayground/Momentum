@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_model.dart';
 import '../services/api_service.dart';
 import '../../features/auth/auth_service.dart';
+import '../../core/session expired dialog.dart';
 
 class AuthState {
   final UserModel? user;
@@ -41,6 +42,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final ApiService _apiService;
 
   AuthNotifier(this._apiService) : super(const AuthState()) {
+    ApiService.onSessionExpired = () {
+      if (mounted) state = const AuthState();
+      showSessionExpiredDialog();
+    };
     checkAuthStatus();
   }
 
@@ -62,6 +67,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     );
 
     try {
+      // ApiService.getMe() already preserves the saved plan/organization.
       final freshUser = await _apiService.getMe();
       state = state.copyWith(
         isAuthenticated: true,
@@ -161,6 +167,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
+      // ApiService.updateMe() already preserves the saved plan/organization.
       final user = await _apiService.updateMe(
         name: name,
         phoneNumber: phoneNumber,

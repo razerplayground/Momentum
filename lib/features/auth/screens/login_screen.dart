@@ -66,11 +66,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Sync local AuthService session email
       await AuthService.setSessionEmail(email);
       await ref.read(workspacesProvider.notifier).loadWorkspaces();
-      if (mounted) {
-        context.go('/workspaces');
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Logged in successfully.'),
+          backgroundColor: AppColors.accentGreen,
+        ),
+      );
+      context.go('/workspaces');
     } else {
-      final error = ref.read(authProvider).errorMessage ?? 'Invalid email or password.';
+      final error =
+          ref.read(authProvider).errorMessage ?? 'Invalid email or password.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error),
@@ -103,7 +109,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Center(
-                    child: Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 32),
+                    child: Icon(Icons.rocket_launch_rounded,
+                        color: Colors.white, size: 32),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -111,10 +118,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Sign in to continue to BizPro.',
-                  style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodyLarge
+                      .copyWith(color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 40),
-
                 Text('Email', style: AppTextStyles.labelLarge),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -125,7 +132,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
-                    prefixIcon: const Icon(Icons.email_outlined, color: AppColors.primary),
+                    prefixIcon: const Icon(Icons.email_outlined,
+                        color: AppColors.primary),
                     filled: true,
                     fillColor: AppColors.surfaceVariant,
                     border: OutlineInputBorder(
@@ -135,7 +143,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
                 Text('Password', style: AppTextStyles.labelLarge),
                 const SizedBox(height: 8),
                 TextFormField(
@@ -146,11 +153,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
-                    prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.primary),
+                    prefixIcon: const Icon(Icons.lock_outline_rounded,
+                        color: AppColors.primary),
                     suffixIcon: IconButton(
-                      icon: Icon(_obscureText ? Icons.visibility_off : Icons.visibility,
+                      icon: Icon(
+                          _obscureText
+                              ? Icons.visibility_off
+                              : Icons.visibility,
                           color: AppColors.textSecondary),
-                      onPressed: () => setState(() => _obscureText = !_obscureText),
+                      onPressed: () =>
+                          setState(() => _obscureText = !_obscureText),
                     ),
                     filled: true,
                     fillColor: AppColors.surfaceVariant,
@@ -161,17 +173,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: authState.isLoading ? null : () {},
                     child: Text('Forgot Password?',
-                        style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary)),
+                        style: AppTextStyles.labelMedium
+                            .copyWith(color: AppColors.primary)),
                   ),
                 ),
                 const SizedBox(height: 32),
-
                 if (authState.isLoading)
                   const Center(
                     child: CircularProgressIndicator(color: AppColors.primary),
@@ -182,15 +193,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onTap: _login,
                   ),
                 const SizedBox(height: 24),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text("Don't have an account?", style: AppTextStyles.bodyMedium),
+                    Text("Don't have an account?",
+                        style: AppTextStyles.bodyMedium),
                     TextButton(
-                      onPressed: authState.isLoading ? null : () => context.go('/signup'),
+                      onPressed: authState.isLoading
+                          ? null
+                          : () => context.go('/signup'),
                       child: Text('Sign Up',
-                          style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
+                          style: AppTextStyles.labelLarge
+                              .copyWith(color: AppColors.primary)),
                     ),
                   ],
                 ),

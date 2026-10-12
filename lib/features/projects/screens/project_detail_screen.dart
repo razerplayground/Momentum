@@ -16,6 +16,7 @@ import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/other_providers.dart';
 import '../../../data/providers/project_progress_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
+import '../../dashboard/dashboard_navigation_provider.dart';
 import '../../../shared/widgets/avatar_stack.dart';
 import '../../../shared/widgets/common_widgets.dart';
 import '../../../shared/widgets/priority_chip.dart';
@@ -141,13 +142,16 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
-            expandedHeight: 260,
+            expandedHeight: 300,
             pinned: true,
             backgroundColor: Color(project.colorValue),
             leading: IconButton(
               icon:
                   const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
-              onPressed: () => context.pop(),
+              onPressed: () {
+                ref.read(dashboardTabIndexProvider.notifier).state = 0;
+                context.go('/home');
+              },
             ),
             actions: [
               IconButton(
@@ -170,7 +174,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
                 ),
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 56, 20, 20),
+                    padding: const EdgeInsets.fromLTRB(
+                      20,
+                      56,
+                      20,
+                      20 + kTextTabBarHeight,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -236,8 +245,11 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
                         const SizedBox(height: 4),
                         Text(
                           '${(progress.value * 100).round()}% complete · ${progress.completed}/${progress.total} items',
-                          style: AppTextStyles.labelSmall
-                              .copyWith(color: Colors.white70),
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: Colors.white70,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -247,10 +259,13 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen>
             ),
             bottom: TabBar(
               controller: _tabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white60,
               indicatorColor: Colors.white,
               indicatorWeight: 3,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 32),
               labelStyle: AppTextStyles.titleSmall,
               tabs: const [
                 Tab(text: 'Tasks'),
@@ -302,7 +317,7 @@ class _TasksTab extends ConsumerWidget {
 
     if (tasks.isEmpty) {
       return EmptyState(
-        icon: Icons.task_alt_rounded,
+        icon: Icons.check_rounded,
         title: 'No Tasks',
         subtitle: 'Add tasks to track progress on this project.',
         actionLabel: 'Add Task',
@@ -526,8 +541,7 @@ class _FinanceTab extends ConsumerWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(e.title,
-                                    style: AppTextStyles.titleMedium),
+                                Text(e.title, style: AppTextStyles.titleMedium),
                                 Text(DateFormat('dd MMM yyyy').format(e.date),
                                     style: AppTextStyles.bodySmall),
                               ],
@@ -977,6 +991,7 @@ class _AddProjectTaskSheet extends StatefulWidget {
 }
 
 class _AddProjectTaskSheetState extends State<_AddProjectTaskSheet> {
+  final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   String _priority = 'medium';
@@ -988,96 +1003,132 @@ class _AddProjectTaskSheetState extends State<_AddProjectTaskSheet> {
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text('New Task', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                hintText: 'Task Title',
-                prefixIcon:
-                    Icon(Icons.task_alt_rounded, color: AppColors.primary),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 20),
+              Text('New Task', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _titleController,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                decoration: const InputDecoration(
+                  hintText: 'Task Title',
+                  prefixIcon:
+                      Icon(Icons.task_alt_rounded, color: AppColors.primary),
+                ),
+                validator: (value) {
+                  final title = (value ?? '').trim();
+                  if (title.isEmpty) return 'Task title is required.';
+                  if (title.length > 20) {
+                    return 'Task title must be 20 characters or less.';
+                  }
+                  return null;
+                },
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _descController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                hintText: 'Description (optional)',
-                prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  hintText: 'Description (optional)',
+                  prefixIcon:
+                      Icon(Icons.notes_rounded, color: AppColors.primary),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: ['low', 'medium', 'high'].map((p) {
-                final isSelected = _priority == p;
-                final color = p == 'high'
-                    ? AppColors.accentRed
-                    : p == 'medium'
-                        ? AppColors.accentOrange
-                        : AppColors.accentGreen;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _priority = p),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? color.withOpacity(0.12)
-                              : AppColors.surfaceVariant,
-                          border: isSelected
-                              ? Border.all(color: color, width: 2)
-                              : null,
-                          borderRadius: BorderRadius.circular(10),
+              const SizedBox(height: 12),
+              Row(
+                children: ['low', 'medium', 'high'].map((p) {
+                  final isSelected = _priority == p;
+                  final color = p == 'high'
+                      ? AppColors.accentRed
+                      : p == 'medium'
+                          ? AppColors.accentOrange
+                          : AppColors.accentGreen;
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _priority = p),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? color.withOpacity(0.12)
+                                : AppColors.surfaceVariant,
+                            border: isSelected
+                                ? Border.all(color: color, width: 2)
+                                : null,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Center(
+                              child: Text(p.toUpperCase(),
+                                  style: AppTextStyles.labelMedium.copyWith(
+                                      color: isSelected
+                                          ? color
+                                          : AppColors.textSecondary,
+                                      fontWeight: FontWeight.w700))),
                         ),
-                        child: Center(
-                            child: Text(p.toUpperCase(),
-                                style: AppTextStyles.labelMedium.copyWith(
-                                    color: isSelected
-                                        ? color
-                                        : AppColors.textSecondary,
-                                    fontWeight: FontWeight.w700))),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-            GradientButton(
-                label: 'Create Task',
-                onTap: () {
-                  if (_titleController.text.trim().isEmpty) return;
-                  final workspaceId =
-                      widget.parentRef.read(activeWorkspaceIdProvider);
-                  if (workspaceId == null) return;
-                  final task = TaskModel.create(
-                    workspaceId: workspaceId,
-                    projectId: widget.projectId,
-                    title: _titleController.text.trim(),
-                    description: _descController.text.trim(),
-                    priority: _priority,
                   );
-                  widget.parentRef.read(tasksProvider.notifier).addTask(task);
-                  Navigator.pop(context);
-                }),
-            const SizedBox(height: 8),
-          ],
+                }).toList(),
+              ),
+              const SizedBox(height: 24),
+              GradientButton(
+                  label: 'Create Task',
+                  onTap: () async {
+                    if (!_formKey.currentState!.validate()) return;
+                    final workspaceId =
+                        widget.parentRef.read(activeWorkspaceIdProvider);
+                    if (workspaceId == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Select a workspace before saving.')),
+                      );
+                      return;
+                    }
+                    try {
+                      final task = TaskModel.create(
+                        workspaceId: workspaceId,
+                        projectId: widget.projectId,
+                        title: _titleController.text.trim(),
+                        description: _descController.text.trim(),
+                        priority: _priority,
+                      );
+                      await widget.parentRef
+                          .read(tasksProvider.notifier)
+                          .addTask(task);
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Task created successfully.')),
+                      );
+                    } catch (error) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Unable to create task: $error'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -1191,20 +1242,55 @@ class _AddExpenseSheetState extends State<_AddExpenseSheet> {
             const SizedBox(height: 24),
             GradientButton(
                 label: 'Add Transaction',
-                onTap: () {
-                  if (_titleController.text.trim().isEmpty) return;
-                  final amount = double.tryParse(_amountController.text) ?? 0;
+                onTap: () async {
+                  final amount = double.tryParse(_amountController.text.trim());
+                  if (_titleController.text.trim().isEmpty ||
+                      amount == null ||
+                      amount <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                            'Enter a transaction title and a positive amount.'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                    return;
+                  }
                   final workspaceId =
-                      widget.ref.read(activeWorkspaceIdProvider) ?? '';
-                  final expense = ExpenseModel.create(
-                    workspaceId: workspaceId,
-                    projectId: widget.projectId,
-                    title: _titleController.text.trim(),
-                    amount: amount,
-                    type: _type,
-                  );
-                  widget.ref.read(expensesProvider.notifier).add(expense);
-                  Navigator.pop(context);
+                      widget.ref.read(activeWorkspaceIdProvider);
+                  if (workspaceId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Select a workspace before saving.')),
+                    );
+                    return;
+                  }
+                  try {
+                    final expense = ExpenseModel.create(
+                      workspaceId: workspaceId,
+                      projectId: widget.projectId,
+                      title: _titleController.text.trim(),
+                      amount: amount,
+                      type: _type,
+                    );
+                    await widget.ref
+                        .read(expensesProvider.notifier)
+                        .add(expense);
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Transaction added successfully.')),
+                    );
+                  } catch (error) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Unable to add transaction: $error'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                  }
                 }),
             const SizedBox(height: 8),
           ],
@@ -1227,6 +1313,7 @@ class _AddFollowupSheet extends StatefulWidget {
 }
 
 class _AddFollowupSheetState extends State<_AddFollowupSheet> {
+  final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   String _type = 'call';
@@ -1239,127 +1326,161 @@ class _AddFollowupSheetState extends State<_AddFollowupSheet> {
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text('Add Follow-up', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 16),
-            // Type selector
-            SizedBox(
-              height: 40,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final t in [
-                    'call',
-                    'email',
-                    'meeting',
-                    'visit',
-                    'message'
-                  ])
-                    GestureDetector(
-                      onTap: () => setState(() => _type = t),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: _type == t
-                              ? AppColors.primary.withOpacity(0.12)
-                              : AppColors.surfaceVariant,
-                          border: _type == t
-                              ? Border.all(color: AppColors.primary, width: 2)
-                              : null,
-                          borderRadius: BorderRadius.circular(20),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 20),
+              Text('Add Follow-up', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 16),
+              // Type selector
+              SizedBox(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final t in [
+                      'call',
+                      'email',
+                      'meeting',
+                      'visit',
+                      'message'
+                    ])
+                      GestureDetector(
+                        onTap: () => setState(() => _type = t),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _type == t
+                                ? AppColors.primary.withOpacity(0.12)
+                                : AppColors.surfaceVariant,
+                            border: _type == t
+                                ? Border.all(color: AppColors.primary, width: 2)
+                                : null,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(t[0].toUpperCase() + t.substring(1),
+                              style: AppTextStyles.labelMedium.copyWith(
+                                  color: _type == t
+                                      ? AppColors.primary
+                                      : AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600)),
                         ),
-                        child: Text(t[0].toUpperCase() + t.substring(1),
-                            style: AppTextStyles.labelMedium.copyWith(
-                                color: _type == t
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
-                                fontWeight: FontWeight.w600)),
                       ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                hintText: 'Follow-up Title',
-                prefixIcon:
-                    Icon(Icons.track_changes_rounded, color: AppColors.primary),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _descController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                hintText: 'Description (optional)',
-                prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary),
-              ),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _dueDate,
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                );
-                if (picked != null) setState(() => _dueDate = picked);
-              },
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(12),
+                  ],
                 ),
-                child: Row(children: [
-                  const Icon(Icons.calendar_today_rounded,
-                      color: AppColors.primary, size: 18),
-                  const SizedBox(width: 8),
-                  Text(DateFormat('dd MMM yyyy').format(_dueDate),
-                      style: AppTextStyles.titleMedium),
-                ]),
               ),
-            ),
-            const SizedBox(height: 24),
-            GradientButton(
-                label: 'Add Follow-up',
-                onTap: () {
-                  if (_titleController.text.trim().isEmpty) return;
-                  final workspaceId =
-                      widget.parentRef.read(activeWorkspaceIdProvider);
-                  if (workspaceId == null) return;
-                  final followup = FollowupModel.create(
-                    workspaceId: workspaceId,
-                    projectId: widget.projectId,
-                    title: _titleController.text.trim(),
-                    description: _descController.text.trim(),
-                    dueDate: _dueDate,
-                    type: _type,
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _titleController,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                decoration: const InputDecoration(
+                  hintText: 'Follow-up Title',
+                  prefixIcon: Icon(Icons.track_changes_rounded,
+                      color: AppColors.primary),
+                ),
+                validator: (value) {
+                  final title = (value ?? '').trim();
+                  if (title.isEmpty) return 'Follow-up title is required.';
+                  if (title.length > 20) {
+                    return 'Follow-up title must be 20 characters or less.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _descController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  hintText: 'Description (optional)',
+                  prefixIcon:
+                      Icon(Icons.notes_rounded, color: AppColors.primary),
+                ),
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _dueDate,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
                   );
-                  widget.parentRef
-                      .read(followupsProvider.notifier)
-                      .add(followup);
-                  Navigator.pop(context);
-                }),
-            const SizedBox(height: 8),
-          ],
+                  if (picked != null) setState(() => _dueDate = picked);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.calendar_today_rounded,
+                        color: AppColors.primary, size: 18),
+                    const SizedBox(width: 8),
+                    Text(DateFormat('dd MMM yyyy').format(_dueDate),
+                        style: AppTextStyles.titleMedium),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 24),
+              GradientButton(
+                  label: 'Add Follow-up',
+                  onTap: () async {
+                    if (!_formKey.currentState!.validate()) return;
+                    final workspaceId =
+                        widget.parentRef.read(activeWorkspaceIdProvider);
+                    if (workspaceId == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Select a workspace before saving.')),
+                      );
+                      return;
+                    }
+                    try {
+                      final followup = FollowupModel.create(
+                        workspaceId: workspaceId,
+                        projectId: widget.projectId,
+                        title: _titleController.text.trim(),
+                        description: _descController.text.trim(),
+                        dueDate: _dueDate,
+                        type: _type,
+                      );
+                      await widget.parentRef
+                          .read(followupsProvider.notifier)
+                          .add(followup);
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Follow-up created successfully.')),
+                      );
+                    } catch (error) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Unable to create follow-up: $error'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -1380,6 +1501,7 @@ class _AddProjectNoteSheet extends StatefulWidget {
 }
 
 class _AddProjectNoteSheetState extends State<_AddProjectNoteSheet> {
+  final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   int _colorIndex = 0;
@@ -1400,79 +1522,116 @@ class _AddProjectNoteSheetState extends State<_AddProjectNoteSheet> {
           EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-                child: Container(
-                    width: 40,
-                    height: 4,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 20),
+              Text('New Note', style: AppTextStyles.headlineSmall),
+              const SizedBox(height: 14),
+              // Color picker
+              Row(
+                  children: _colors.asMap().entries.map((entry) {
+                final i = entry.key;
+                final c = entry.value;
+                return GestureDetector(
+                  onTap: () => setState(() => _colorIndex = i),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.only(right: 8),
+                    width: 28,
+                    height: 28,
                     decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text('New Note', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 14),
-            // Color picker
-            Row(
-                children: _colors.asMap().entries.map((entry) {
-              final i = entry.key;
-              final c = entry.value;
-              return GestureDetector(
-                onTap: () => setState(() => _colorIndex = i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.only(right: 8),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: c,
-                    shape: BoxShape.circle,
-                    border: _colorIndex == i
-                        ? Border.all(color: AppColors.primary, width: 2.5)
-                        : null,
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: _colorIndex == i
+                          ? Border.all(color: AppColors.primary, width: 2.5)
+                          : null,
+                    ),
                   ),
+                );
+              }).toList()),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _titleController,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                decoration: const InputDecoration(
+                  hintText: 'Note Title',
+                  prefixIcon:
+                      Icon(Icons.title_rounded, color: AppColors.primary),
                 ),
-              );
-            }).toList()),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                hintText: 'Note Title',
-                prefixIcon: Icon(Icons.title_rounded, color: AppColors.primary),
+                validator: (value) {
+                  final title = (value ?? '').trim();
+                  if (title.isEmpty) return 'Note title is required.';
+                  if (title.length > 20) {
+                    return 'Note title must be 20 characters or less.';
+                  }
+                  return null;
+                },
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _contentController,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                hintText: 'Write your note...',
-                prefixIcon: Icon(Icons.notes_rounded, color: AppColors.primary),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _contentController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  hintText: 'Write your note...',
+                  prefixIcon:
+                      Icon(Icons.notes_rounded, color: AppColors.primary),
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            GradientButton(
-                label: 'Save Note',
-                onTap: () {
-                  if (_titleController.text.trim().isEmpty) return;
-                  final workspaceId =
-                      widget.parentRef.read(activeWorkspaceIdProvider);
-                  if (workspaceId == null) return;
-                  final note = NoteModel.create(
-                    workspaceId: workspaceId,
-                    projectId: widget.projectId,
-                    title: _titleController.text.trim(),
-                    content: _contentController.text.trim(),
-                    colorValue: _colors[_colorIndex].value,
-                  );
-                  widget.parentRef.read(notesProvider.notifier).addNote(note);
-                  Navigator.pop(context);
-                }),
-            const SizedBox(height: 8),
-          ],
+              const SizedBox(height: 24),
+              GradientButton(
+                  label: 'Save Note',
+                  onTap: () async {
+                    if (!_formKey.currentState!.validate()) return;
+                    final workspaceId =
+                        widget.parentRef.read(activeWorkspaceIdProvider);
+                    if (workspaceId == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Select a workspace before saving.')),
+                      );
+                      return;
+                    }
+                    try {
+                      final note = NoteModel.create(
+                        workspaceId: workspaceId,
+                        projectId: widget.projectId,
+                        title: _titleController.text.trim(),
+                        content: _contentController.text.trim(),
+                        colorValue: _colors[_colorIndex].value,
+                      );
+                      await widget.parentRef
+                          .read(notesProvider.notifier)
+                          .addNote(note);
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Note created successfully.')),
+                      );
+                    } catch (error) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Unable to save note: $error'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -1493,6 +1652,7 @@ class _ProjectSettingsSheet extends StatefulWidget {
 
 class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
   late TextEditingController _nameController;
+  String? _nameError;
   late String _status;
   late String _priority;
   late DateTime? _dueDate;
@@ -1551,30 +1711,54 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
     super.dispose();
   }
 
-  void _save() {
-    if (_nameController.text.trim().isEmpty) return;
-    final updated = ProjectModel(
-      id: widget.project.id,
-      workspaceId: widget.project.workspaceId,
-      name: _nameController.text.trim(),
-      description: widget.project.description,
-      statusStr: _status,
-      priorityStr: _priority,
-      startDate: widget.project.startDate,
-      dueDate: _dueDate,
-      createdAt: widget.project.createdAt,
-      updatedAt: DateTime.now(),
-      memberIds: _selectedMemberIds.toList(),
-      budget: widget.project.budget,
-      totalIncome: widget.project.totalIncome,
-      totalExpense: widget.project.totalExpense,
-      colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
-      emoji: _selectedEmoji,
-      completedTasks: widget.project.completedTasks,
-      totalTasks: widget.project.totalTasks,
-    );
-    widget.parentRef.read(projectsProvider.notifier).updateProject(updated);
-    Navigator.pop(context);
+  Future<void> _save() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty || name.length > 20) {
+      setState(() {
+        _nameError = name.isEmpty
+            ? 'Project name is required.'
+            : 'Project name must be 20 characters or less.';
+      });
+      return;
+    }
+    try {
+      final updated = ProjectModel(
+        id: widget.project.id,
+        workspaceId: widget.project.workspaceId,
+        name: name,
+        description: widget.project.description,
+        statusStr: _status,
+        priorityStr: _priority,
+        startDate: widget.project.startDate,
+        dueDate: _dueDate,
+        createdAt: widget.project.createdAt,
+        updatedAt: DateTime.now(),
+        memberIds: _selectedMemberIds.toList(),
+        budget: widget.project.budget,
+        totalIncome: widget.project.totalIncome,
+        totalExpense: widget.project.totalExpense,
+        colorValue: AppColors.workspaceColors[_selectedColorIndex].value,
+        emoji: _selectedEmoji,
+        completedTasks: widget.project.completedTasks,
+        totalTasks: widget.project.totalTasks,
+      );
+      await widget.parentRef
+          .read(projectsProvider.notifier)
+          .updateProject(updated);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Project settings saved.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to save project settings: $error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   void _confirmDelete() {
@@ -1657,10 +1841,18 @@ class _ProjectSettingsSheetState extends State<_ProjectSettingsSheet> {
               const SizedBox(height: 8),
               TextField(
                 controller: _nameController,
-                decoration: const InputDecoration(
+                onChanged: (value) {
+                  setState(() {
+                    _nameError = value.trim().length > 20
+                        ? 'Project name must be 20 characters or less.'
+                        : null;
+                  });
+                },
+                decoration: InputDecoration(
                   prefixIcon:
                       Icon(Icons.folder_rounded, color: AppColors.primary),
                   hintText: 'Project name',
+                  errorText: _nameError,
                 ),
               ),
               const SizedBox(height: 16),

@@ -280,6 +280,7 @@ class _WorkspaceSelectionScreenState
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CircleAvatar(
                       radius: 24,
@@ -294,49 +295,64 @@ class _WorkspaceSelectionScreenState
                             fontWeight: FontWeight.bold),
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            authUser?.name ?? 'BizPro User',
-                            style: AppTextStyles.titleMedium
-                                .copyWith(fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            authUser?.email ?? email,
-                            style: AppTextStyles.bodySmall
-                                .copyWith(color: AppColors.textSecondary),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            authUser?.phoneNumber?.isNotEmpty == true
-                                ? authUser!.phoneNumber!
-                                : 'Add phone number',
-                            style: AppTextStyles.bodySmall
-                                .copyWith(color: AppColors.textSecondary),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              authUser?.name ?? 'BizPro User',
+                              style: AppTextStyles.titleMedium
+                                  .copyWith(fontWeight: FontWeight.bold),
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              authUser?.email ?? email,
+                              style: AppTextStyles.bodySmall
+                                  .copyWith(color: AppColors.textSecondary),
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              authUser?.phoneNumber?.isNotEmpty == true
+                                  ? authUser!.phoneNumber!
+                                  : 'Add phone number',
+                              style: AppTextStyles.bodySmall
+                                  .copyWith(color: AppColors.textSecondary),
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Edit account details',
-                      onPressed: () {
-                        showDialog<void>(
-                          context: context,
-                          builder: (context) => _EditAccountDialog(
-                            name: authUser?.name ?? '',
-                            email: authUser?.email ?? email,
-                            phoneNumber: authUser?.phoneNumber ?? '',
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.edit_outlined),
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: IconButton(
+                        tooltip: 'Edit account details',
+                        constraints: const BoxConstraints(),
+                        padding: EdgeInsets.zero,
+                        onPressed: () {
+                          showDialog<void>(
+                            context: context,
+                            builder: (context) => _EditAccountDialog(
+                              name: authUser?.name ?? '',
+                              email: authUser?.email ?? email,
+                              phoneNumber: authUser?.phoneNumber ?? '',
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
                     ),
                   ],
                 ),
@@ -346,11 +362,47 @@ class _WorkspaceSelectionScreenState
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Log out?'),
+                        content:
+                            const Text('Are you sure you want to log out?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Log out'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !context.mounted) return;
+
                     Navigator.pop(context);
-                    await ref.read(authProvider.notifier).logout();
-                    await AuthService.logout();
-                    if (!context.mounted) return;
-                    context.go('/login');
+                    try {
+                      await ref.read(authProvider.notifier).logout();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Logged out successfully.'),
+                          backgroundColor: AppColors.accentGreen,
+                        ),
+                      );
+                      context.go('/login');
+                    } catch (error) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Unable to log out: $error'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
                   },
                   icon: const Icon(Icons.logout_rounded),
                   label: const Text('Log Out'),
@@ -492,55 +544,176 @@ class _EditAccountDialogState extends ConsumerState<_EditAccountDialog> {
     );
   }
 
+  InputDecoration _inputDecoration({
+    required String label,
+    required IconData icon,
+    String? helperText,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      helperText: helperText,
+      prefixIcon: Icon(icon, color: AppColors.primary),
+      filled: true,
+      fillColor: AppColors.surfaceVariant,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.borderLight),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.borderLight),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Edit Account Details'),
+      backgroundColor: AppColors.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+      title: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: const BoxDecoration(
+              gradient: AppColors.purpleGradient,
+              borderRadius: BorderRadius.all(Radius.circular(16)),
+            ),
+            child: const Icon(
+              Icons.manage_accounts_rounded,
+              color: Colors.white,
+              size: 25,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Edit account', style: AppTextStyles.headlineSmall),
+                const SizedBox(height: 3),
+                Text(
+                  'Update your personal details',
+                  style: AppTextStyles.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Close',
+            onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close_rounded),
+            color: AppColors.textSecondary,
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
       content: Form(
         key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: _nameController,
-                enabled: !_isSaving,
-                decoration: const InputDecoration(labelText: 'Name'),
-                validator: (value) =>
-                    (value ?? '').trim().isEmpty ? 'Name is required.' : null,
-              ),
-              TextFormField(
-                controller: _emailController,
-                readOnly: true,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  helperText: 'Email changes are not supported here.',
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 440,
+            maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  enabled: !_isSaving,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: _inputDecoration(
+                    label: 'Full name',
+                    icon: Icons.person_outline_rounded,
+                  ),
+                  validator: (value) =>
+                      (value ?? '').trim().isEmpty ? 'Name is required.' : null,
                 ),
-              ),
-              TextFormField(
-                controller: _phoneController,
-                enabled: !_isSaving,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Phone number'),
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _emailController,
+                  readOnly: true,
+                  decoration: _inputDecoration(
+                    label: 'Email address',
+                    icon: Icons.alternate_email_rounded,
+                    helperText: 'Email address cannot be changed here.',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _phoneController,
+                  enabled: !_isSaving,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.done,
+                  decoration: _inputDecoration(
+                    label: 'Phone number',
+                    icon: Icons.phone_outlined,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _isSaving ? null : _save,
-          child: _isSaving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Save'),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  side: const BorderSide(color: AppColors.border),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text('Cancel'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _isSaving ? null : _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.check_rounded, size: 18),
+                label: Text(_isSaving ? 'Saving...' : 'Save changes'),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -745,7 +918,13 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
                   label: 'Save Changes',
                   onTap: () async {
                     final name = _nameController.text.trim();
-                    if (name.isEmpty) return;
+                    if (name.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Workspace name is required.')),
+                      );
+                      return;
+                    }
 
                     setState(() => _isSaving = true);
 
@@ -758,12 +937,22 @@ class _EditWorkspaceSheetState extends ConsumerState<_EditWorkspaceSheet> {
                       industry: _selectedIndustry,
                     );
 
-                    await ref
+                    final synced = await ref
                         .read(workspacesProvider.notifier)
                         .updateWorkspace(updated);
 
                     if (!context.mounted) return;
                     Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          synced
+                              ? 'Workspace settings saved.'
+                              : 'Settings saved on this device; server sync failed.',
+                        ),
+                        backgroundColor: synced ? null : AppColors.accentOrange,
+                      ),
+                    );
                   },
                 ),
               const SizedBox(height: 8),
@@ -1164,7 +1353,13 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                   label: 'Create Workspace',
                   onTap: () async {
                     final name = _nameController.text.trim();
-                    if (name.isEmpty) return;
+                    if (name.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Workspace name is required.')),
+                      );
+                      return;
+                    }
 
                     final notifier = ref.read(workspacesProvider.notifier);
                     if (!notifier.canAddWorkspace) {
@@ -1193,18 +1388,18 @@ class _AddWorkspaceSheetState extends ConsumerState<_AddWorkspaceSheet> {
                     try {
                       final created = await notifier.addWorkspace(workspace);
                       if (!context.mounted) return;
-                      if (created) {
-                        Navigator.of(context).pop();
-                      } else {
-                        setState(() => _isCreating = false);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'This account cannot create another business.',
-                            ),
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            created
+                                ? 'Workspace created successfully.'
+                                : 'Workspace saved on this device; server sync failed.',
                           ),
-                        );
-                      }
+                          backgroundColor:
+                              created ? null : AppColors.accentOrange,
+                        ),
+                      );
                     } catch (error) {
                       if (!context.mounted) return;
                       setState(() => _isCreating = false);

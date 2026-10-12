@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../data/models/expense_model.dart';
+import '../../../data/models/task_model.dart';
+import '../../../data/providers/other_providers.dart';
+import '../../../data/providers/project_provider.dart';
+import '../../../data/providers/task_provider.dart';
 import '../../../data/providers/workspace_provider.dart';
-import '../../../data/services/api_service.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -15,217 +19,140 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String? _businessId;
-  String? _loadedBusinessId;
   bool _allBusinesses = true;
-  bool _loading = false;
-  String? _error;
-  dynamic _overview;
-  dynamic _financialTrend;
-  dynamic _projectAnalytics;
 
   @override
   Widget build(BuildContext context) {
     final workspaces = ref.watch(workspacesProvider);
+    final workspaceNames = {
+      for (final workspace in workspaces) workspace.id: workspace.name,
+    };
     final activeWorkspaceId = ref.watch(activeWorkspaceProvider)?.id;
     final businessId = workspaces.any((item) => item.id == _businessId)
         ? _businessId!
         : activeWorkspaceId ??
             (workspaces.isNotEmpty ? workspaces.first.id : null);
-
-    if (_loadedBusinessId != (_allBusinesses ? '*' : businessId)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted &&
-            _loadedBusinessId != (_allBusinesses ? '*' : businessId)) {
-          _loadReports(businessId);
-        }
-      });
-    }
+    final workspaceIds = _allBusinesses
+        ? workspaces.map((workspace) => workspace.id).toSet()
+        : businessId == null
+            ? <String>{}
+            : {businessId};
+    final projects = ref.watch(projectsProvider);
+    final projectWorkspaceIds = {
+      for (final project in projects) project.id: project.workspaceId,
+    };
+    final projectNames = {
+      for (final project in projects) project.id: project.name,
+    };
+    final tasks = ref.watch(tasksProvider).where((task) {
+      final taskWorkspaceId = task.projectId == null
+          ? task.workspaceId
+          : projectWorkspaceIds[task.projectId] ?? task.workspaceId;
+      return workspaceIds.contains(taskWorkspaceId);
+    }).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final expenses = ref
+        .watch(expensesProvider)
+        .where((expense) => workspaceIds.contains(expense.workspaceId))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Reports'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh reports',
-            onPressed: _loading ? null : () => _loadReports(businessId),
-            icon: const Icon(Icons.refresh_rounded),
+      appBar: AppBar(title: const Text('Reports')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        children: [
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.business_center_outlined),
+                label: Text('All businesses'),
+              ),
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.business_outlined),
+                label: Text('One business'),
+              ),
+            ],
+            selected: {_allBusinesses},
+            onSelectionChanged: (selection) =>
+                setState(() => _allBusinesses = selection.first),
+          ),
+          if (!_allBusinesses) ...[
+            const SizedBox(height: 16),
+            if (workspaces.isEmpty)
+              const Text('Create a business to view its reports.')
+            else
+              DropdownButtonFormField<String>(
+                initialValue: businessId,
+                decoration: const InputDecoration(
+                  labelText: 'Business',
+                  prefixIcon: Icon(Icons.business_rounded),
+                ),
+                items: workspaces
+                    .map(
+                      (workspace) => DropdownMenuItem(
+                        value: workspace.id,
+                        child: Text(workspace.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _businessId = value);
+                },
+              ),
+          ],
+          const SizedBox(height: 16),
+          if (expenses.isNotEmpty)
+            _FinanceDetailsSection(
+              expenses: expenses,
+              workspaceNames: workspaceNames,
+              projectNames: projectNames,
+              title: _allBusinesses
+                  ? 'Finance details · All businesses'
+                  : 'Finance details · ${workspaceNames[businessId] ?? 'Business'}',
+            ),
+          _TaskDetailsSection(
+            tasks: tasks,
+            workspaceNames: workspaceNames,
+            projectWorkspaceIds: projectWorkspaceIds,
+            projectNames: projectNames,
+            title: _allBusinesses
+                ? 'Task details · All businesses'
+                : 'Task details · ${workspaceNames[businessId] ?? 'Business'}',
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () => _loadReports(businessId),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-          children: [
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(
-                  value: true,
-                  icon: Icon(Icons.business_center_outlined),
-                  label: Text('All businesses'),
-                ),
-                ButtonSegment(
-                  value: false,
-                  icon: Icon(Icons.business_outlined),
-                  label: Text('One business'),
-                ),
-              ],
-              selected: {_allBusinesses},
-              onSelectionChanged: _loading
-                  ? null
-                  : (selection) {
-                      setState(() => _allBusinesses = selection.first);
-                      _loadReports(businessId);
-                    },
-            ),
-            if (!_allBusinesses) ...[
-              const SizedBox(height: 16),
-              if (workspaces.isEmpty)
-                const Text('Create a business to view its reports.')
-              else
-                DropdownButtonFormField<String>(
-                  initialValue: businessId,
-                  decoration: const InputDecoration(
-                    labelText: 'Business',
-                    prefixIcon: Icon(Icons.business_rounded),
-                  ),
-                  items: workspaces
-                      .map(
-                        (workspace) => DropdownMenuItem(
-                          value: workspace.id,
-                          child: Text(workspace.name),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: _loading
-                      ? null
-                      : (value) {
-                          if (value == null) return;
-                          setState(() => _businessId = value);
-                          _loadReports(value);
-                        },
-                ),
-            ],
-            const SizedBox(height: 16),
-            if (_loading) const LinearProgressIndicator(),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Could not load reports: $_error'),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: _loading
-                              ? null
-                              : () => _loadReports(businessId),
-                          child: const Text('Retry'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            if (_overview != null) ...[
-              _ReportSection(
-                title: _allBusinesses
-                    ? 'Organization overview'
-                    : 'Business overview',
-                data: _overview,
-              ),
-              if (!_allBusinesses) ...[
-                if (_financialTrend != null)
-                  _ReportSection(
-                    title: 'Financial trend',
-                    data: _financialTrend,
-                  ),
-                if (_projectAnalytics != null)
-                  _ReportSection(
-                    title: 'Project analytics',
-                    data: _projectAnalytics,
-                  ),
-              ],
-            ],
-            if (!_loading &&
-                _error == null &&
-                _overview == null &&
-                (_allBusinesses || businessId != null))
-              const Padding(
-                padding: EdgeInsets.only(top: 48),
-                child: Center(child: Text('No report data available.')),
-              ),
-          ],
-        ),
-      ),
     );
-  }
-
-  Future<void> _loadReports(String? businessId) async {
-    if (!_allBusinesses && businessId == null) {
-      setState(() {
-        _overview = null;
-        _financialTrend = null;
-        _projectAnalytics = null;
-        _loadedBusinessId = null;
-        _loading = false;
-        _error = null;
-      });
-      return;
-    }
-
-    final requestKey = _allBusinesses ? '*' : businessId!;
-    setState(() {
-      _businessId = businessId;
-      _loadedBusinessId = requestKey;
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final api = ref.read(apiServiceProvider);
-      final results = _allBusinesses
-          ? await Future.wait<dynamic>([
-              api.getOrganizationReportOverview(),
-            ])
-          : await Future.wait<dynamic>([
-              api.getBusinessReport(businessId!),
-              api.getFinancialTrend(businessId),
-              api.getProjectAnalytics(businessId),
-            ]);
-      if (!mounted || _loadedBusinessId != requestKey) return;
-      setState(() {
-        _overview = _unwrapReport(results[0]);
-        _financialTrend =
-            _allBusinesses ? null : _unwrapReport(results[1]);
-        _projectAnalytics =
-            _allBusinesses ? null : _unwrapReport(results[2]);
-        _loading = false;
-      });
-    } catch (error) {
-      if (!mounted || _loadedBusinessId != requestKey) return;
-      setState(() {
-        _loading = false;
-        _error = error.toString();
-      });
-    }
   }
 }
 
-class _ReportSection extends StatelessWidget {
+class _FinanceDetailsSection extends StatelessWidget {
+  final List<ExpenseModel> expenses;
+  final Map<String, String> workspaceNames;
+  final Map<String, String> projectNames;
   final String title;
-  final dynamic data;
 
-  const _ReportSection({required this.title, required this.data});
+  const _FinanceDetailsSection({
+    required this.expenses,
+    required this.workspaceNames,
+    required this.projectNames,
+    required this.title,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final content = _unwrapReport(data);
+    final income = expenses
+        .where((expense) => expense.isIncome)
+        .fold(0.0, (total, expense) => total + expense.amount);
+    final spending = expenses
+        .where((expense) => !expense.isIncome)
+        .fold(0.0, (total, expense) => total + expense.amount);
+    final netProfit = income - spending;
+
     return Padding(
       padding: const EdgeInsets.only(top: 20),
       child: Column(
@@ -233,163 +160,230 @@ class _ReportSection extends StatelessWidget {
         children: [
           Text(title, style: AppTextStyles.titleLarge),
           const SizedBox(height: 10),
-          if (content is Map)
-            _ReportMap(data: Map<String, dynamic>.from(content))
-          else if (content is List)
-            _ReportList(data: content)
-          else
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(_displayValue(content)),
+          Row(
+            children: [
+              _SummaryMetric(
+                label: 'Income',
+                value: '₹${income.toStringAsFixed(2)}',
+                color: AppColors.accentGreen,
+              ),
+              const SizedBox(width: 10),
+              _SummaryMetric(
+                label: 'Expenses',
+                value: '₹${spending.toStringAsFixed(2)}',
+                color: AppColors.accentRed,
+              ),
+              const SizedBox(width: 10),
+              _SummaryMetric(
+                label: 'Net profit',
+                value: '₹${netProfit.toStringAsFixed(2)}',
+                color: netProfit >= 0
+                    ? AppColors.accentGreen
+                    : AppColors.accentRed,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('${expenses.length} transactions',
+              style: AppTextStyles.bodySmall),
+          ...expenses.map(
+            (expense) => Card(
+              margin: const EdgeInsets.only(top: 8),
+              child: ListTile(
+                leading: Icon(
+                  expense.isIncome
+                      ? Icons.trending_up_rounded
+                      : Icons.trending_down_rounded,
+                  color: expense.isIncome
+                      ? AppColors.accentGreen
+                      : AppColors.accentRed,
+                ),
+                title: Text(
+                  expense.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  [
+                    if (workspaceNames[expense.workspaceId] != null)
+                      workspaceNames[expense.workspaceId]!,
+                    if (projectNames[expense.projectId] != null)
+                      projectNames[expense.projectId]!,
+                    expense.categoryStr,
+                    if (expense.description.trim().isNotEmpty)
+                      expense.description.trim(),
+                    expense.isCompleted ? 'Completed' : 'Open',
+                    expense.date.toLocal().toIso8601String().split('T').first,
+                  ].join(' · '),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Text(
+                  '${expense.isIncome ? '+' : '-'}₹${expense.amount.toStringAsFixed(2)}',
+                  style: AppTextStyles.titleSmall.copyWith(
+                    color: expense.isIncome
+                        ? AppColors.accentGreen
+                        : AppColors.accentRed,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _ReportMap extends StatelessWidget {
-  final Map<String, dynamic> data;
+class _TaskDetailsSection extends StatelessWidget {
+  final List<TaskModel> tasks;
+  final Map<String, String> workspaceNames;
+  final Map<String, String> projectWorkspaceIds;
+  final Map<String, String> projectNames;
+  final String title;
 
-  const _ReportMap({required this.data});
+  const _TaskDetailsSection({
+    required this.tasks,
+    required this.workspaceNames,
+    required this.projectWorkspaceIds,
+    required this.projectNames,
+    required this.title,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final scalarEntries = data.entries
-        .where((entry) => entry.value != null && !_isStructured(entry.value))
-        .toList();
-    final structuredEntries =
-        data.entries.where((entry) => _isStructured(entry.value)).toList();
+    final completed = tasks
+        .where((task) => task.isCompleted || task.statusStr == 'done')
+        .length;
+    final pending = tasks.length - completed;
 
-    return Column(
-      children: [
-        if (scalarEntries.isNotEmpty)
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: scalarEntries
-                .map(
-                  (entry) => SizedBox(
-                    width: (MediaQuery.sizeOf(context).width - 50) / 2,
-                    child: Card(
-                      margin: EdgeInsets.zero,
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _humanize(entry.key),
-                              style: AppTextStyles.bodySmall,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _displayValue(entry.value),
-                              style: AppTextStyles.titleMedium.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-                .toList(),
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTextStyles.titleLarge),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _SummaryMetric(
+                label: 'Total tasks',
+                value: '${tasks.length}',
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 10),
+              _SummaryMetric(
+                label: 'Completed',
+                value: '$completed',
+                color: AppColors.accentGreen,
+              ),
+              const SizedBox(width: 10),
+              _SummaryMetric(
+                label: 'Open',
+                value: '$pending',
+                color: AppColors.accentOrange,
+              ),
+            ],
           ),
-        ...structuredEntries.map(
-          (entry) => _ReportSection(title: _humanize(entry.key), data: entry.value),
-        ),
-        if (scalarEntries.isEmpty && structuredEntries.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('No metrics reported.'),
+          if (tasks.isEmpty)
+            const Card(
+              margin: EdgeInsets.only(top: 8),
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No tasks for this scope.'),
+              ),
             ),
-          ),
-      ],
+          ...tasks.map((task) {
+            final taskWorkspaceId = task.projectId == null
+                ? task.workspaceId
+                : projectWorkspaceIds[task.projectId] ?? task.workspaceId;
+            final details = <String>[
+              if (workspaceNames[taskWorkspaceId] != null)
+                workspaceNames[taskWorkspaceId]!,
+              if (task.projectId != null &&
+                  projectNames[task.projectId] != null)
+                projectNames[task.projectId]!,
+              _humanize(task.statusStr),
+              '${_humanize(task.priorityStr)} priority',
+              if (task.subtasks.isNotEmpty)
+                '${task.completedSubtaskCount}/${task.subtasks.length} subtasks',
+              if (task.dueDate != null)
+                'Due ${task.dueDate!.toLocal().toIso8601String().split('T').first}',
+            ];
+
+            return Card(
+              margin: const EdgeInsets.only(top: 8),
+              child: ListTile(
+                leading: Icon(
+                  task.isCompleted || task.statusStr == 'done'
+                      ? Icons.check_circle_rounded
+                      : Icons.task_alt_rounded,
+                  color: task.isCompleted || task.statusStr == 'done'
+                      ? AppColors.accentGreen
+                      : AppColors.primary,
+                ),
+                title: Text(
+                  task.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  [
+                    if (task.description.trim().isNotEmpty)
+                      task.description.trim(),
+                    ...details,
+                  ].join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }
 
-class _ReportList extends StatelessWidget {
-  final List<dynamic> data;
+class _SummaryMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
 
-  const _ReportList({required this.data});
+  const _SummaryMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (data.isEmpty) {
-      return const Card(
+    return Expanded(
+      child: Card(
+        margin: EdgeInsets.zero,
         child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('No data reported.'),
-        ),
-      );
-    }
-    return Column(
-      children: [
-        for (var index = 0; index < data.length; index++)
-          Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: data[index] is Map
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _displayValue(
-                            _firstReportValue(
-                              Map<String, dynamic>.from(data[index] as Map),
-                              const ['month', 'name', 'title', 'label'],
-                            ),
-                          ),
-                          style: AppTextStyles.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        _ReportMap(
-                          data: Map<String, dynamic>.from(data[index] as Map),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        Expanded(child: Text('Item ${index + 1}')),
-                        Text(_displayValue(data[index])),
-                      ],
-                    ),
-            ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: AppTextStyles.bodySmall),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.titleMedium.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
-      ],
+        ),
+      ),
     );
   }
-}
-
-dynamic _unwrapReport(dynamic value) {
-  var report = value;
-  for (var depth = 0; depth < 3 && report is Map; depth++) {
-    final map = Map<String, dynamic>.from(report);
-    final nested = map['data'] ?? map['report'] ?? map['overview'];
-    if (nested is Map || nested is List) {
-      report = nested;
-    } else {
-      return map;
-    }
-  }
-  return report;
-}
-
-bool _isStructured(dynamic value) => value is Map || value is List;
-
-dynamic _firstReportValue(Map<String, dynamic> map, List<String> keys) {
-  for (final key in keys) {
-    if (map[key] != null) return map[key];
-  }
-  return null;
 }
 
 String _humanize(String value) {
@@ -403,11 +397,4 @@ String _humanize(String value) {
   return spaced.isEmpty
       ? spaced
       : '${spaced[0].toUpperCase()}${spaced.substring(1)}';
-}
-
-String _displayValue(dynamic value) {
-  if (value == null) return '—';
-  if (value is bool) return value ? 'Yes' : 'No';
-  if (value is Map || value is List) return value.toString();
-  return value.toString();
 }

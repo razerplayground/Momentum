@@ -77,7 +77,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     if (_selectedPlan == 'organization' && org.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Organization name is required for organization plan.'),
+          content: const Text(
+              'Organization name is required for organization plan.'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -97,11 +98,17 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     if (success) {
       await AuthService.setSessionEmail(email);
       await ref.read(workspacesProvider.notifier).loadWorkspaces();
-      if (mounted) {
-        context.go('/workspaces');
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Account created successfully.'),
+          backgroundColor: AppColors.accentGreen,
+        ),
+      );
+      context.go('/workspaces');
     } else {
-      final error = ref.read(authProvider).errorMessage ?? 'Signup failed. Please try again.';
+      final error = ref.read(authProvider).errorMessage ??
+          'Signup failed. Please try again.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(error),
@@ -127,14 +134,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               children: [
                 const SizedBox(height: 12),
                 GestureDetector(
-                  onTap: authState.isLoading ? null : () => context.go('/login'),
+                  onTap:
+                      authState.isLoading ? null : () => context.go('/login'),
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceVariant,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                    child:
+                        const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -142,7 +151,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Join BizPro to manage your workspaces.',
-                  style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodyLarge
+                      .copyWith(color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 32),
 
@@ -158,7 +168,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                         isSelected: _selectedPlan == 'individual',
                         onTap: authState.isLoading
                             ? null
-                            : () => setState(() => _selectedPlan = 'individual'),
+                            : () =>
+                                setState(() => _selectedPlan = 'individual'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -169,7 +180,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                         isSelected: _selectedPlan == 'organization',
                         onTap: authState.isLoading
                             ? null
-                            : () => setState(() => _selectedPlan = 'organization'),
+                            : () =>
+                                setState(() => _selectedPlan = 'organization'),
                       ),
                     ),
                   ],
@@ -186,7 +198,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Enter your full name',
-                    prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.primary),
+                    prefixIcon: const Icon(Icons.person_outline_rounded,
+                        color: AppColors.primary),
                     filled: true,
                     fillColor: AppColors.surfaceVariant,
                     border: OutlineInputBorder(
@@ -207,7 +220,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
-                    prefixIcon: const Icon(Icons.email_outlined, color: AppColors.primary),
+                    prefixIcon: const Icon(Icons.email_outlined,
+                        color: AppColors.primary),
                     filled: true,
                     fillColor: AppColors.surfaceVariant,
                     border: OutlineInputBorder(
@@ -227,7 +241,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                     enabled: !authState.isLoading,
                     decoration: InputDecoration(
                       hintText: 'Enter organization name',
-                      prefixIcon: const Icon(Icons.corporate_fare_rounded, color: AppColors.primary),
+                      prefixIcon: const Icon(Icons.corporate_fare_rounded,
+                          color: AppColors.primary),
                       filled: true,
                       fillColor: AppColors.surfaceVariant,
                       border: OutlineInputBorder(
@@ -249,11 +264,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   autovalidateMode: AutovalidateMode.onUserInteraction,
                   decoration: InputDecoration(
                     hintText: 'Create password (min. 8 characters)',
-                    prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.primary),
+                    prefixIcon: const Icon(Icons.lock_outline_rounded,
+                        color: AppColors.primary),
                     suffixIcon: IconButton(
-                      icon: Icon(_obscureText ? Icons.visibility_off : Icons.visibility,
+                      icon: Icon(
+                          _obscureText
+                              ? Icons.visibility_off
+                              : Icons.visibility,
                           color: AppColors.textSecondary),
-                      onPressed: () => setState(() => _obscureText = !_obscureText),
+                      onPressed: () =>
+                          setState(() => _obscureText = !_obscureText),
                     ),
                     filled: true,
                     fillColor: AppColors.surfaceVariant,
@@ -279,11 +299,15 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text("Already have an account?", style: AppTextStyles.bodyMedium),
+                    Text("Already have an account?",
+                        style: AppTextStyles.bodyMedium),
                     TextButton(
-                      onPressed: authState.isLoading ? null : () => context.go('/login'),
+                      onPressed: authState.isLoading
+                          ? null
+                          : () => context.go('/login'),
                       child: Text('Login',
-                          style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
+                          style: AppTextStyles.labelLarge
+                              .copyWith(color: AppColors.primary)),
                     ),
                   ],
                 ),
@@ -318,7 +342,9 @@ class _PlanOptionCard extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary.withOpacity(0.08) : AppColors.surfaceVariant,
+          color: isSelected
+              ? AppColors.primary.withOpacity(0.08)
+              : AppColors.surfaceVariant,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? AppColors.primary : Colors.transparent,

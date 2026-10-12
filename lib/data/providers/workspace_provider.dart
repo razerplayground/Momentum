@@ -69,7 +69,10 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
 
   bool get canAddWorkspace {
     final user = _ref.read(authProvider).user;
-    return canCreateMultipleBusinesses(user) || state.isEmpty;
+    debugPrint('canAddWorkspace -> user=${user?.email}, plan=${user?.plan}, '
+        'org=${user?.organizationName}, workspaces=${state.length}');
+    // More than one business already means this is an organization account.
+    return canCreateMultipleBusinesses(user) || state.length != 1;
   }
 
   /// Load workspaces from Hive box first, then fetch fresh list from REST API
@@ -81,6 +84,12 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
       state = cached
           .where((w) => w.ownerEmail.isEmpty || w.ownerEmail == email)
           .toList();
+      final activeId = _ref.read(activeWorkspaceIdProvider);
+      if (!_ref.read(globalViewEnabledProvider) &&
+          (activeId == null || !state.any((w) => w.id == activeId)) &&
+          state.isNotEmpty) {
+        setActiveWorkspace(state.first.id);
+      }
     }
 
     try {
@@ -110,7 +119,8 @@ class WorkspaceNotifier extends StateNotifier<List<WorkspaceModel>> {
   /// Add new workspace via REST API and save locally
   Future<bool> addWorkspace(WorkspaceModel workspace) async {
     final user = _ref.read(authProvider).user;
-    final isOrganization = canCreateMultipleBusinesses(user);
+    final isOrganization =
+        canCreateMultipleBusinesses(user) || state.length > 1;
     if (!isOrganization && state.isNotEmpty) return false;
 
     final box = Hive.box<WorkspaceModel>(AppConstants.workspaceBox);

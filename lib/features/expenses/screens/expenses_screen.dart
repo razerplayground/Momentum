@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../data/providers/other_providers.dart';
 import '../../../data/models/expense_model.dart';
+import '../../dashboard/dashboard_navigation_provider.dart';
 
 class ExpensesScreen extends ConsumerWidget {
   final String projectId;
@@ -16,7 +18,16 @@ class ExpensesScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Project Finance')),
+      appBar: AppBar(
+        title: const Text('Project Finance'),
+        leading: IconButton(
+          onPressed: () {
+            ref.read(dashboardTabIndexProvider.notifier).state = 0;
+            context.go('/home');
+          },
+          icon: const Icon(Icons.arrow_back_ios_rounded),
+        ),
+      ),
       body: ListView.builder(
         padding: const EdgeInsets.all(20),
         itemCount: expenses.length,
@@ -39,10 +50,19 @@ class ExpensesScreen extends ConsumerWidget {
               ),
               confirmDismiss: (_) => _confirmDelete(context),
               onDismissed: (_) async {
-                await ref.read(expensesProvider.notifier).delete(e.id);
-                if (context.mounted) {
+                try {
+                  await ref.read(expensesProvider.notifier).delete(e.id);
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Transaction deleted')),
+                  );
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Unable to delete transaction: $error'),
+                      backgroundColor: AppColors.error,
+                    ),
                   );
                 }
               },
@@ -165,10 +185,19 @@ class ExpensesScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, ExpenseModel expense) async {
     final confirmed = await _confirmDelete(context);
     if (!confirmed) return;
-    await ref.read(expensesProvider.notifier).delete(expense.id);
-    if (context.mounted) {
+    try {
+      await ref.read(expensesProvider.notifier).delete(expense.id);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transaction deleted')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to delete transaction: $error'),
+          backgroundColor: AppColors.error,
+        ),
       );
     }
   }
@@ -306,14 +335,30 @@ class _EditExpenseSheetState extends ConsumerState<_EditExpenseSheet> {
                   child: FilledButton(
                     onPressed: () async {
                       if (!_formKey.currentState!.validate()) return;
-                      final expense = widget.expense
-                        ..title = _titleController.text.trim()
-                        ..amount = double.parse(_amountController.text)
-                        ..date = _date
-                        ..typeStr = _isIncome ? 'income' : 'expense';
-                      await expense.save();
-                      ref.invalidate(projectExpensesProvider(widget.projectId));
-                      if (context.mounted) Navigator.pop(context);
+                      try {
+                        final expense = widget.expense
+                          ..title = _titleController.text.trim()
+                          ..amount = double.parse(_amountController.text)
+                          ..date = _date
+                          ..typeStr = _isIncome ? 'income' : 'expense';
+                        await expense.save();
+                        ref.invalidate(
+                            projectExpensesProvider(widget.projectId));
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Transaction updated.')),
+                        );
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Unable to save transaction: $error'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
                     },
                     child: const Text('Save Changes'),
                   ),

@@ -1,3 +1,4 @@
+import 'package:bussiness_management/data/providers/project_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/task_model.dart';
@@ -19,13 +20,22 @@ final workspaceTasksProvider = Provider<List<TaskModel>>((ref) {
   final userWorkspaceIds = ref.watch(userWorkspaceIdsProvider);
   final isGlobalView = ref.watch(globalViewEnabledProvider);
   final activeId = ref.watch(activeWorkspaceIdProvider);
+  final projects = ref.watch(projectsProvider);
+  // projectId -> workspaceId
+  final projectWorkspace = {for (final p in projects) p.id: p.workspaceId};
+
+  // Project task-na project-oda workspace, illa-na task-oda workspace
+  String effectiveWorkspaceId(TaskModel t) =>
+      (t.projectId != null ? projectWorkspace[t.projectId] : null) ??
+      t.workspaceId;
+
   if (isGlobalView) {
     return tasks
-        .where((task) => userWorkspaceIds.contains(task.workspaceId))
+        .where((task) => userWorkspaceIds.contains(effectiveWorkspaceId(task)))
         .toList();
   }
   if (activeId == null) return [];
-  return tasks.where((t) => t.workspaceId == activeId).toList();
+  return tasks.where((t) => effectiveWorkspaceId(t) == activeId).toList();
 });
 
 final projectTasksProvider =

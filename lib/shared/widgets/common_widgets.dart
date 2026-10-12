@@ -215,33 +215,54 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(40),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              width: 122,
+              height: 122,
               decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.08),
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.primary.withOpacity(0.18),
+                  width: 2,
+                ),
               ),
-              child: Icon(icon, size: 48, color: AppColors.primary),
+              child: Icon(icon, size: 62, color: AppColors.primary),
             ),
-            const SizedBox(height: 20),
-            Text(title, style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 8),
+            const SizedBox(height: 28),
             Text(
-              subtitle,
-              style: AppTextStyles.bodyMedium,
-              textAlign: TextAlign.center,
+              title,
+              style: AppTextStyles.displaySmall.copyWith(
+                fontSize: 32,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.8,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: 280,
+              child: Text(
+                subtitle,
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.textSecondary,
+                  fontSize: 16,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
             ),
             if (actionLabel != null) ...[
-              const SizedBox(height: 24),
+              const SizedBox(height: 30),
               GradientButton(
                 label: actionLabel!,
                 onTap: onAction ?? () {},
-                width: 160,
-                height: 44,
+                width: 260,
+                height: 56,
+                borderRadius: 18,
               ),
             ],
           ],

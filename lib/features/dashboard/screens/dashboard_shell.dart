@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../dashboard_navigation_provider.dart';
 import '../../../shared/widgets/app_bottom_nav.dart';
 import '../../dashboard/screens/dashboard_screen.dart';
 import '../../projects/screens/projects_screen.dart';
@@ -16,10 +17,8 @@ class DashboardShell extends ConsumerStatefulWidget {
 }
 
 class _DashboardShellState extends ConsumerState<DashboardShell> {
-  int _currentIndex = 0;
-
   void _onFabTap() {
-    switch (_currentIndex) {
+    switch (ref.read(dashboardTabIndexProvider)) {
       case 0:
         // Show quick add dialog
         _showQuickAdd();
@@ -139,14 +138,17 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
                       context.go('/home/reports');
                     },
                   ),
-                  _QuickAddItem(
-                    icon: Icons.cloud_upload_outlined,
-                    label: 'File Storage',
-                    color: const Color(0xFF0F766E),
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.go('/home/storage');
-                    },
+                  Offstage(
+                    offstage: true,
+                    child: _QuickAddItem(
+                      icon: Icons.cloud_upload_outlined,
+                      label: 'File Storage',
+                      color: const Color(0xFF0F766E),
+                      onTap: () {
+                        Navigator.pop(context);
+                        context.go('/home/storage');
+                      },
+                    ),
                   ),
                   _QuickAddItem(
                     icon: Icons.history_rounded,
@@ -167,10 +169,13 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     );
   }
 
-  void _switchTab(int index) => setState(() => _currentIndex = index);
+  void _switchTab(int index) {
+    ref.read(dashboardTabIndexProvider.notifier).state = index;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = ref.watch(dashboardTabIndexProvider);
     final screens = [
       DashboardScreen(onTabSwitch: _switchTab),
       const ProjectsScreen(),
@@ -182,18 +187,37 @@ class _DashboardShellState extends ConsumerState<DashboardShell> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && context.mounted) {
+        if (didPop || !context.mounted) return;
+
+        final path = GoRouterState.of(context).uri.path;
+        const backToHomePaths = [
+          '/home/projects',
+          '/home/tasks',
+          '/home/notes',
+          '/home/employees',
+          '/home/followups',
+          '/home/todo',
+          '/home/calendar',
+        ];
+        if (backToHomePaths.any(
+          (route) => path == route || path.startsWith('$route/'),
+        )) {
+          ref.read(dashboardTabIndexProvider.notifier).state = 0;
+          context.go('/home');
+        } else if (currentIndex != 0) {
+          ref.read(dashboardTabIndexProvider.notifier).state = 0;
+        } else {
           context.go('/workspaces');
         }
       },
       child: Scaffold(
         body: IndexedStack(
-          index: _currentIndex,
+          index: currentIndex,
           children: screens,
         ),
         bottomNavigationBar: AppBottomNav(
-          currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
+          currentIndex: currentIndex,
+          onTap: (i) => ref.read(dashboardTabIndexProvider.notifier).state = i,
           onFabTap: _onFabTap,
         ),
       ),
