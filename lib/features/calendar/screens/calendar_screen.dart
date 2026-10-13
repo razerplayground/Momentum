@@ -16,6 +16,9 @@ import '../../../shared/widgets/avatar_stack.dart';
 /// View modes for the calendar screen header.
 enum _CalendarView { day, month }
 
+/// Width of one date cell (56) + its right margin (8).
+const double _dateCellExtent = 64.0;
+
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
 
@@ -45,21 +48,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeInOut);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       // Sync provider with initial date AFTER build — avoids writing inside build()
       ref.read(selectedDateProvider.notifier).state = _selectedDate;
       ref.read(viewedMonthProvider.notifier).state = _selectedDate;
-      // Scroll to today's date cell in day view
-      final targetOffset = (DateTime.now().day - 1) * 64.0;
-      if (_dateScrollController.hasClients) {
-        try {
-          final maxExtent = _dateScrollController.position.maxScrollExtent;
-          _dateScrollController.animateTo(
-            targetOffset > maxExtent ? maxExtent : targetOffset,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        } catch (_) {}
-      }
+      _scrollToSelectedDay();
     });
   }
 
@@ -68,6 +61,18 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     _dateScrollController.dispose();
     _fadeCtrl.dispose();
     super.dispose();
+  }
+
+  /// Scrolls the day strip so the selected day is at the left edge.
+  void _scrollToSelectedDay() {
+    if (!_dateScrollController.hasClients) return;
+    final target = (_selectedDate.day - 1) * _dateCellExtent;
+    final maxExtent = _dateScrollController.position.maxScrollExtent;
+    _dateScrollController.animateTo(
+      target > maxExtent ? maxExtent : target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
   }
 
   /// Updates the selected date in both local state and the Riverpod provider.
@@ -81,13 +86,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
 
   /// Switches the calendar view and plays a fade transition.
   Future<void> _switchView(_CalendarView newView) async {
+    if (newView == _view) return;
+
     if (newView == _CalendarView.month) {
       ref.read(viewedMonthProvider.notifier).state =
           DateTime(_selectedDate.year, _selectedDate.month, 1);
     }
+
     await _fadeCtrl.reverse();
+    if (!mounted) return;
     setState(() => _view = newView);
     _fadeCtrl.forward();
+
+    if (newView == _CalendarView.day) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToSelectedDay();
+      });
+    }
   }
 
   /// Navigates the month-grid view by [delta] months (−1 or +1).
@@ -223,11 +238,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           ),
 
           // ─── Day Timeline ─────────────────────────────────────────
-
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             sliver: appointments.isEmpty
                 ? SliverFillRemaining(
+                    hasScrollBody: false,
                     child: EmptyState(
                       icon: Icons.event_outlined,
                       title: 'No Appointments',
@@ -243,7 +258,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                       childCount: appointments.length,
                     ),
                   ),
-          )
+          ),
+
+          // Space so the floating button never covers the last appointment.
+          if (appointments.isNotEmpty)
+            const SliverToBoxAdapter(child: SizedBox(height: 88)),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -258,33 +277,30 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   // ─── Day Strip (horizontal scroll) ─────────────────────────────────────────
 
   Widget _buildDayStrip() {
-    return Column(
-      children: [
-        _WeekDayLabels(selectedDate: _selectedDate),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 72,
-          child: ListView.builder(
-            controller: _dateScrollController,
-            scrollDirection: Axis.horizontal,
-            itemCount: _datesInSelectedMonth.length,
-            itemBuilder: (context, i) {
-              final date = _datesInSelectedMonth[i];
-              final isSelected = date.day == _selectedDate.day &&
-                  date.month == _selectedDate.month;
-              final isToday = date.day == DateTime.now().day &&
-                  date.month == DateTime.now().month &&
-                  date.year == DateTime.now().year;
-              return _DateCell(
-                date: date,
-                isSelected: isSelected,
-                isToday: isToday,
-                onTap: () => _selectDate(date),
-              );
-            },
-          ),
-        ),
-      ],
+    final dates = _datesInSelectedMonth;
+    final now = DateTime.now();
+
+    return SizedBox(
+      height: 72,
+      child: ListView.builder(
+        controller: _dateScrollController,
+        scrollDirection: Axis.horizontal,
+        itemCount: dates.length,
+        itemBuilder: (context, i) {
+          final date = dates[i];
+          final isSelected = date.day == _selectedDate.day &&
+              date.month == _selectedDate.month;
+          final isToday = date.day == now.day &&
+              date.month == now.month &&
+              date.year == now.year;
+          return _DateCell(
+            date: date,
+            isSelected: isSelected,
+            isToday: isToday,
+            onTap: () => _selectDate(date),
+          );
+        },
+      ),
     );
   }
 
@@ -293,13 +309,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
   Widget _buildMonthGrid() {
     final viewedMonth = ref.watch(viewedMonthProvider);
     final monthAppts = ref.watch(monthAppointmentsProvider);
+    final now = DateTime.now();
 
-    // Build a set of days that have appointments for quick lookup
+    // Count appointments per day of the viewed month.
     final dayAppointmentCount = <int, int>{};
+    final monthStart = DateTime(viewedMonth.year, viewedMonth.month, 1);
+    final monthEnd =
+        DateTime(viewedMonth.year, viewedMonth.month + 1, 0, 23, 59, 59, 999);
+
     for (final a in monthAppts) {
-      final monthStart = DateTime(viewedMonth.year, viewedMonth.month, 1);
-      final monthEnd =
-          DateTime(viewedMonth.year, viewedMonth.month + 1, 0, 23, 59, 59, 999);
       final start = a.startTime;
       final end = a.endTime;
 
@@ -314,7 +332,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
           dayAppointmentCount[cursor.day] =
               (dayAppointmentCount[cursor.day] ?? 0) + 1;
         }
-        cursor = cursor.add(const Duration(days: 1));
+        cursor = DateTime(cursor.year, cursor.month, cursor.day + 1);
       }
     }
 
@@ -405,16 +423,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
             final isSelected = date.day == _selectedDate.day &&
                 date.month == _selectedDate.month &&
                 date.year == _selectedDate.year;
-            final isToday = date.day == DateTime.now().day &&
-                date.month == DateTime.now().month &&
-                date.year == DateTime.now().year;
+            final isToday = date.day == now.day &&
+                date.month == now.month &&
+                date.year == now.year;
             final appointmentCount = dayAppointmentCount[dayNum] ?? 0;
             final hasAppointment = appointmentCount > 0;
 
             return GestureDetector(
-              onTap: () {
-                _selectDate(date);
-              },
+              onTap: () => _selectDate(date),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 margin: const EdgeInsets.all(2),
@@ -423,11 +439,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                   gradient: isSelected ? AppColors.purpleGradient : null,
                   color: isSelected
                       ? null
-                      : hasAppointment
+                      : (hasAppointment || isToday)
                           ? AppColors.primary.withOpacity(0.08)
-                          : isToday
-                              ? AppColors.primary.withOpacity(0.08)
-                              : Colors.transparent,
+                          : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
                   border: isToday && !isSelected
                       ? Border.all(
@@ -471,7 +485,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
                         child: Text(
                           '$appointmentCount',
                           style: AppTextStyles.labelSmall.copyWith(
-                            color: isSelected ? Colors.white : Colors.white,
+                            color: Colors.white,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
                           ),
@@ -501,32 +515,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen>
     showModalBottomSheet(
       context: context,
       builder: (ctx) => const _CalendarSettingsSheet(),
-    );
-  }
-}
-
-// ─── Week Day Labels (for day strip) ─────────────────────────────────────────
-
-class _WeekDayLabels extends StatelessWidget {
-  final DateTime selectedDate;
-
-  const _WeekDayLabels({required this.selectedDate});
-
-  @override
-  Widget build(BuildContext context) {
-    final days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: days
-          .map((d) => SizedBox(
-                width: 32,
-                child: Center(
-                    child: Text(d,
-                        style: AppTextStyles.labelMedium.copyWith(
-                            color: AppColors.textTertiary,
-                            fontWeight: FontWeight.w600))),
-              ))
-          .toList(),
     );
   }
 }
@@ -729,7 +717,7 @@ class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
       context: context,
       initialTime: isStart ? _startTime : _endTime,
     );
-    if (t == null) return;
+    if (t == null || !mounted) return;
     setState(() {
       if (isStart) {
         _startTime = t;
@@ -743,12 +731,13 @@ class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
 
+    final messenger = ScaffoldMessenger.of(context);
+
     final workspaceId = ref.read(activeWorkspaceIdProvider);
     if (workspaceId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Select a workspace before scheduling.')),
       );
-      
       return;
     }
 
@@ -768,7 +757,7 @@ class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
       _endTime.minute,
     );
     if (!end.isAfter(start)) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('End time must be later than start time.'),
           backgroundColor: AppColors.error,
@@ -785,14 +774,6 @@ class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
     final outsideWorkingHours =
         startMinutes < workStartMinutes || endMinutes > workEndMinutes;
 
-    final messenger = ScaffoldMessenger.of(context);
-
-    if (outsideWorkingHours) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Outside your working hours.')),
-      );
-    }
-
     setState(() => _isSaving = true);
 
     try {
@@ -806,8 +787,8 @@ class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
       );
       await ref.read(appointmentsProvider.notifier).add(appointment);
 
-      // Schedule alarm-style reminder using the "Default Reminders" setting.
-      await NotificationService.scheduleAppointmentReminder(
+      // Alarm-style reminder using the "Default Reminders" setting.
+      final reminder = await NotificationService.scheduleAppointmentReminder(
         seed: '$workspaceId${appointment.title}',
         title: appointment.title,
         start: start,
@@ -817,9 +798,18 @@ class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
 
       if (!mounted) return;
       Navigator.pop(context);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Appointment scheduled successfully.')),
-      );
+
+      var message = 'Appointment scheduled successfully.';
+      if (reminder == ReminderResult.notificationsBlocked) {
+        message = 'Appointment saved, but notifications are turned off. '
+            'Enable them in system settings to get reminders.';
+      } else if (reminder == ReminderResult.failed) {
+        message = 'Appointment saved, but the reminder could not be set.';
+      }
+      if (outsideWorkingHours) {
+        message = '$message (Outside your working hours.)';
+      }
+      messenger.showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
       if (!mounted) return;
       setState(() => _isSaving = false);
@@ -1011,6 +1001,15 @@ class _AddAppointmentScreenState extends ConsumerState<AddAppointmentScreen> {
 class _CalendarSettingsSheet extends ConsumerWidget {
   const _CalendarSettingsSheet();
 
+  static const List<(int, String)> _reminderOptions = [
+    (0, 'No reminder'),
+    (5, '5 minutes'),
+    (10, '10 minutes'),
+    (15, '15 minutes'),
+    (30, '30 minutes'),
+    (60, '1 hour'),
+  ];
+
   String _formatReminder(int minutes) {
     if (minutes <= 0) return 'No reminder';
     if (minutes < 60) return '$minutes min';
@@ -1034,42 +1033,13 @@ class _CalendarSettingsSheet extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                RadioListTile<int>(
-                  value: 0,
-                  groupValue: settings.reminderMinutes,
-                  title: const Text('No reminder'),
-                  onChanged: (value) => Navigator.pop(dialogContext, value),
-                ),
-                RadioListTile<int>(
-                  value: 5,
-                  groupValue: settings.reminderMinutes,
-                  title: const Text('5 minutes'),
-                  onChanged: (value) => Navigator.pop(dialogContext, value),
-                ),
-                RadioListTile<int>(
-                  value: 10,
-                  groupValue: settings.reminderMinutes,
-                  title: const Text('10 minutes'),
-                  onChanged: (value) => Navigator.pop(dialogContext, value),
-                ),
-                RadioListTile<int>(
-                  value: 15,
-                  groupValue: settings.reminderMinutes,
-                  title: const Text('15 minutes'),
-                  onChanged: (value) => Navigator.pop(dialogContext, value),
-                ),
-                RadioListTile<int>(
-                  value: 30,
-                  groupValue: settings.reminderMinutes,
-                  title: const Text('30 minutes'),
-                  onChanged: (value) => Navigator.pop(dialogContext, value),
-                ),
-                RadioListTile<int>(
-                  value: 60,
-                  groupValue: settings.reminderMinutes,
-                  title: const Text('1 hour'),
-                  onChanged: (value) => Navigator.pop(dialogContext, value),
-                ),
+                for (final option in _reminderOptions)
+                  RadioListTile<int>(
+                    value: option.$1,
+                    groupValue: settings.reminderMinutes,
+                    title: Text(option.$2),
+                    onChanged: (value) => Navigator.pop(dialogContext, value),
+                  ),
               ],
             ),
           ),
@@ -1097,7 +1067,6 @@ class _CalendarSettingsSheet extends ConsumerWidget {
       final endMinutes = endTime.hour * 60 + endTime.minute;
 
       if (endMinutes <= startMinutes) {
-        if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Work end time must be later than work start time.'),
@@ -1131,19 +1100,6 @@ class _CalendarSettingsSheet extends ConsumerWidget {
           const SizedBox(height: 20),
           Text('Calendar Settings', style: AppTextStyles.headlineSmall),
           const SizedBox(height: 20),
-          // ListTile(
-          //   leading: const Icon(Icons.sync_rounded, color: AppColors.primary),
-          //   title: const Text('Sync with Google Calendar'),
-          //   trailing: Switch(
-          //     value: settings.syncGoogle,
-          //     onChanged: (value) async {
-          //       await ref
-          //           .read(calendarSettingsProvider.notifier)
-          //           .setSync(value);
-          //     },
-          //   ),
-          //   contentPadding: EdgeInsets.zero,
-          // ),
           ListTile(
             leading: const Icon(Icons.notifications_active_rounded,
                 color: AppColors.primary),

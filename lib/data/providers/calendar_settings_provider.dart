@@ -21,7 +21,11 @@ class CalendarSettingsNotifier extends StateNotifier<CalendarSettings> {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_calendarSettingsKey);
 
-    if (_revision != revisionAtStart || raw == null || raw.isEmpty) return;
+    // Stop if the notifier was disposed, the user already changed a setting
+    // while we were loading, or nothing is stored yet.
+    if (!mounted || _revision != revisionAtStart || raw == null || raw.isEmpty) {
+      return;
+    }
 
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
@@ -32,15 +36,21 @@ class CalendarSettingsNotifier extends StateNotifier<CalendarSettings> {
     }
   }
 
-  Future<void> _save(CalendarSettings settings) async {
+  /// Saves are queued so they run in order. Errors are caught inside the
+  /// queue so one failed save can never block the later ones.
+  Future<void> _save(CalendarSettings settings) {
     _pendingSave = _pendingSave.then((_) async {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _calendarSettingsKey,
-        jsonEncode(settings.toPrefs()),
-      );
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          _calendarSettingsKey,
+          jsonEncode(settings.toPrefs()),
+        );
+      } catch (e) {
+        debugPrint('Could not save calendar settings: $e');
+      }
     });
-    await _pendingSave;
+    return _pendingSave;
   }
 
   Future<void> setSync(bool value) async {
